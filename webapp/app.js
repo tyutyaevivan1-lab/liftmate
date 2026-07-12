@@ -2,10 +2,15 @@
 
 /**
  * LiftMate Web App — выбор упражнения.
- * Чистый фронтенд без реальной интеграции с ботом: все действия (клик по упражнению,
- * сохранение своего упражнения) пока только логируются в консоль — реальная логика и
- * передача языка/данных пользователя будут подключены следующим шагом.
+ *
+ * Карточка конкретного упражнения (экран "exercise-detail") получает реальные данные
+ * с API-сервера (api.py): последний результат и историю для графика прогресса.
+ * Добавление своего упражнения пока остаётся заглушкой (console.log) — это следующий шаг.
  */
+
+// Адрес задеплоенного API-сервера (см. api.py). Авторизация — Telegram initData
+// в заголовке Authorization: Bearer <initData>, сервер сам проверяет подпись.
+const API_BASE_URL = "https://liftmate-production-f659.up.railway.app";
 
 // ---------------------------------------------------------------------------
 // Данные упражнений — зеркало exercises_data.py (категории/упражнения/языки ru-en-fr)
@@ -90,12 +95,33 @@ const UI_TEXT = {
   },
   save: { ru: "Сохранить", en: "Save", fr: "Enregistrer" },
   back: { ru: "Назад", en: "Back", fr: "Retour" },
-  noResultPlaceholder: {
-    // Статичный пример для дизайна — реальные данные подключим следующим шагом
-    ru: "50кг × 10, 3 подхода",
-    en: "50kg × 10, 3 sets",
-    fr: "50kg × 10, 3 séries",
+  tapToViewHint: {
+    ru: "Нажми, чтобы увидеть прогресс",
+    en: "Tap to see your progress",
+    fr: "Appuie pour voir ta progression",
   },
+  loadingText: { ru: "Загрузка…", en: "Loading…", fr: "Chargement…" },
+  noDataText: {
+    ru: "Пока нет данных — запиши первую тренировку!",
+    en: "No data yet — log your first workout!",
+    fr: "Pas encore de données — enregistre ton premier entraînement !",
+  },
+  errorText: {
+    ru: "Не получилось загрузить данные. Попробуй ещё раз чуть позже.",
+    en: "Couldn't load the data. Please try again in a bit.",
+    fr: "Impossible de charger les données. Réessaie un peu plus tard.",
+  },
+  notInTelegramText: {
+    ru: "Открой это меню внутри Telegram, чтобы увидеть свои данные.",
+    en: "Open this menu inside Telegram to see your data.",
+    fr: "Ouvre ce menu dans Telegram pour voir tes données.",
+  },
+  lastResultLabel: {
+    ru: "Последний результат",
+    en: "Last result",
+    fr: "Dernier résultat",
+  },
+  progressLabel: { ru: "Прогресс", en: "Progress", fr: "Progression" },
 };
 
 // Язык интерфейса: пока всегда "ru" по умолчанию — реальная передача языка
@@ -169,6 +195,49 @@ function initTelegram() {
 }
 
 // ---------------------------------------------------------------------------
+// API-сервер: получение user_id/initData и запросы к /last и /history
+// ---------------------------------------------------------------------------
+
+function getTelegramUserId() {
+  // initDataUnsafe — это удобный, но НЕ проверенный на клиенте разбор initData
+  // (сам Telegram его не подписывает отдельно). Здесь он нужен только чтобы
+  // подставить user_id в URL — настоящая проверка личности происходит на сервере
+  // через initData (сырую строку) в заголовке Authorization, см. getInitData()
+  if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+    return tg.initDataUnsafe.user.id;
+  }
+  return null;
+}
+
+function getInitData() {
+  return tg ? tg.initData : "";
+}
+
+async function fetchFromApi(path) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: {
+      Authorization: `Bearer ${getInitData()}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = new Error(`API ${path} вернул ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+function fetchExerciseLast(userId, exerciseName) {
+  return fetchFromApi(`/api/user/${userId}/exercises/${encodeURIComponent(exerciseName)}/last`);
+}
+
+function fetchExerciseHistory(userId, exerciseName) {
+  return fetchFromApi(`/api/user/${userId}/exercises/${encodeURIComponent(exerciseName)}/history`);
+}
+
+// ---------------------------------------------------------------------------
 // Навигация между экранами
 // ---------------------------------------------------------------------------
 
@@ -176,6 +245,7 @@ const screenElements = {
   categories: document.getElementById("screen-categories"),
   exercises: document.getElementById("screen-exercises"),
   "custom-form": document.getElementById("screen-custom-form"),
+  "exercise-detail": document.getElementById("screen-exercise-detail"),
 };
 
 const backButton = document.getElementById("backButton");
@@ -185,6 +255,8 @@ const screenTitleEl = document.getElementById("screenTitle");
 let screenStack = ["categories"];
 // Категория, для которой сейчас открыт список упражнений / форма своего упражнения
 let activeCategoryKey = null;
+// Упражнение, открытое на экране "exercise-detail" (объект из EXERCISE_CATEGORIES)
+let activeExercise = null;
 
 function currentScreen() {
   return screenStack[screenStack.length - 1];
@@ -202,6 +274,9 @@ function renderHeader() {
     backButton.hidden = false;
   } else if (screen === "custom-form") {
     screenTitleEl.textContent = t(UI_TEXT.customFormTitle);
+    backButton.hidden = false;
+  } else if (screen === "exercise-detail") {
+    screenTitleEl.textContent = activeExercise ? exerciseName(activeExercise) : t(UI_TEXT.exercisesTitleFallback);
     backButton.hidden = false;
   }
 
@@ -246,6 +321,9 @@ function goBack() {
 
   if (target === "categories") {
     activeCategoryKey = null;
+  }
+  if (target !== "exercise-detail") {
+    activeExercise = null;
   }
 
   renderHeader();
@@ -297,13 +375,10 @@ function renderExercises(categoryKey) {
       <span class="exercise-card__thumb" aria-hidden="true">🏋️</span>
       <span class="exercise-card__body">
         <span class="exercise-card__name">${exerciseName(exercise)}</span>
-        <span class="exercise-card__last-result">${t(UI_TEXT.noResultPlaceholder)}</span>
+        <span class="exercise-card__last-result">${t(UI_TEXT.tapToViewHint)}</span>
       </span>
     `;
-    card.addEventListener("click", () => {
-      // Заглушка: реальное сохранение подхода подключим на следующем шаге
-      console.log("Выбрано упражнение:", exerciseName(exercise), exercise.key);
-    });
+    card.addEventListener("click", () => openExerciseDetail(exercise));
     list.appendChild(card);
   });
 }
@@ -341,6 +416,139 @@ document.getElementById("customExerciseForm").addEventListener("submit", (event)
 
   goBack();
 });
+
+// ---------------------------------------------------------------------------
+// Экран 4: карточка упражнения — последний результат + график прогресса
+// ---------------------------------------------------------------------------
+
+function openExerciseDetail(exercise) {
+  activeExercise = exercise;
+  showScreen("exercise-detail");
+  loadExerciseDetail(exercise);
+}
+
+function trimNumber(value) {
+  // Аналог Python "{:g}" — убирает лишние нули после точки (80.0 -> "80", 82.5 -> "82.5")
+  return Number(value).toString();
+}
+
+function pluralizeSetsRu(count) {
+  const n = Math.abs(count) % 100;
+  if (n >= 11 && n <= 14) return "подходов";
+  const lastDigit = n % 10;
+  if (lastDigit === 1) return "подход";
+  if (lastDigit >= 2 && lastDigit <= 4) return "подхода";
+  return "подходов";
+}
+
+function formatLastResult(entry) {
+  const lang = pickLanguage(currentLanguage);
+  const weight = trimNumber(entry.weight);
+
+  if (lang === "ru") {
+    return `${weight}кг × ${entry.reps}, ${entry.sets} ${pluralizeSetsRu(entry.sets)}`;
+  }
+  if (lang === "fr") {
+    const setsWord = entry.sets === 1 ? "série" : "séries";
+    return `${weight}kg × ${entry.reps}, ${entry.sets} ${setsWord}`;
+  }
+  const setsWord = entry.sets === 1 ? "set" : "sets";
+  return `${weight}kg × ${entry.reps}, ${entry.sets} ${setsWord}`;
+}
+
+function formatShortDate(isoDate) {
+  const [, month, day] = isoDate.split("-");
+  return `${day}.${month}`;
+}
+
+function buildProgressChartSVG(history) {
+  const width = 300;
+  const height = 140;
+  const paddingX = 30;
+  const paddingY = 22;
+  const innerWidth = width - paddingX * 2;
+  const innerHeight = height - paddingY * 2;
+
+  const weights = history.map((entry) => entry.weight);
+  const minWeight = Math.min(...weights);
+  const maxWeight = Math.max(...weights);
+  const weightRange = maxWeight - minWeight || 1; // избегаем деления на 0, если все веса равны
+
+  const points = history.map((entry, index) => {
+    const x = history.length === 1
+      ? paddingX + innerWidth / 2
+      : paddingX + (index / (history.length - 1)) * innerWidth;
+    const y = paddingY + innerHeight - ((entry.weight - minWeight) / weightRange) * innerHeight;
+    return { x, y };
+  });
+
+  const polylinePoints = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const circles = points
+    .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="var(--accent-lime)" />`)
+    .join("");
+
+  const firstDate = formatShortDate(history[0].date);
+  const lastDate = formatShortDate(history[history.length - 1].date);
+
+  return `
+    <svg viewBox="0 0 ${width} ${height}" class="progress-chart" role="img" aria-label="${t(UI_TEXT.progressLabel)}">
+      <polyline points="${polylinePoints}" fill="none" stroke="var(--accent-lime)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+      ${circles}
+      <text x="${paddingX}" y="${height - 4}" class="progress-chart__label">${firstDate}</text>
+      <text x="${width - paddingX}" y="${height - 4}" class="progress-chart__label" text-anchor="end">${lastDate}</text>
+      <text x="${paddingX - 6}" y="${paddingY + 4}" class="progress-chart__value-label" text-anchor="end">${trimNumber(maxWeight)}</text>
+      <text x="${paddingX - 6}" y="${height - paddingY}" class="progress-chart__value-label" text-anchor="end">${trimNumber(minWeight)}</text>
+    </svg>
+  `;
+}
+
+async function loadExerciseDetail(exercise) {
+  const container = document.getElementById("exerciseDetail");
+  container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.loadingText)}</p>`;
+
+  const userId = getTelegramUserId();
+  if (!userId) {
+    container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.notInTelegramText)}</p>`;
+    return;
+  }
+
+  // Канонично на английском — так упражнение хранится в базе данных бота
+  // (см. exercises_data.py: get_canonical_exercise_name), независимо от языка интерфейса
+  const canonicalName = exercise.en;
+
+  try {
+    const [last, history] = await Promise.all([
+      fetchExerciseLast(userId, canonicalName),
+      fetchExerciseHistory(userId, canonicalName),
+    ]);
+
+    // Если открыт другой экран, пока запрос летал туда-обратно — не рендерим лишнее
+    if (activeExercise !== exercise) {
+      return;
+    }
+
+    if (!last || history.length === 0) {
+      container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.noDataText)}</p>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="exercise-detail__section">
+        <div class="exercise-detail__label">${t(UI_TEXT.lastResultLabel)}</div>
+        <div class="exercise-detail__last-value">${formatLastResult(last)}</div>
+      </div>
+      <div class="exercise-detail__section">
+        <div class="exercise-detail__label">${t(UI_TEXT.progressLabel)}</div>
+        ${buildProgressChartSVG(history)}
+      </div>
+    `;
+  } catch (error) {
+    console.error("Не удалось загрузить данные упражнения:", error);
+    if (activeExercise === exercise) {
+      container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.errorText)}</p>`;
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Инициализация

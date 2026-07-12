@@ -393,3 +393,68 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Экран 4: карточка упражнения — последний результат + график прогресса   */
+/* ---------------------------------------------------------------------- */
+
+.exercise-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.exercise-detail__status {
+  margin: 32px 0 0;
+  padding: 20px 16px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--card-radius);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-align: center;
+  box-shadow: var(--shadow-card);
+}
+
+.exercise-detail__section {
+  padding: 16px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--card-radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.exercise-detail__label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.exercise-detail__last-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.progress-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 4px;
+}
+
+.progress-chart__label {
+  font-family: var(--font-family);
+  font-size: 9px;
+  fill: var(--text-secondary);
+}
+
+.progress-chart__value-label {
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--text-primary);
+}
