@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m py_compile config.py database.py ai_parser.py handlers.py main.py)",
+      "Bash(mkdir -p /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/api_test)",
+      "Bash(cp /Users/tyutyaev_ivan/LiftMate/.env .env)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8123/docs)",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" \"http://127.0.0.1:8123/api/user/555001/exercises/bench%20press/last\")",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" \"http://127.0.0.1:8123/api/user/555001/exercises/bench%20press/last\" -H \"X-Telegram-Init-Data: user=%7B%22id%22%3A555001%7D&auth_date=9999999999&hash=deadbeef\")",
+      "Bash(pkill -f \"uvicorn api:app --host 127.0.0.1 --port 8123\")"
+    ]
+  }
+}

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+  <title>LiftMate</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="style.css" />
+  <!-- Telegram Web App SDK: даёт доступ к window.Telegram.WebApp -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <button class="back-button" id="backButton" type="button" aria-label="Назад" hidden>
+        <span aria-hidden="true">←</span>
+      </button>
+      <h1 class="app-header__title" id="screenTitle">LiftMate</h1>
+    </header>
+
+    <main class="screens" id="screens">
+      <!-- Экран 1: категории мышц -->
+      <section class="screen screen--active" id="screen-categories" data-screen="categories">
+        <div class="category-grid" id="categoryGrid"></div>
+      </section>
+
+      <!-- Экран 2: упражнения выбранной категории -->
+      <section class="screen" id="screen-exercises" data-screen="exercises">
+        <div class="exercise-list" id="exerciseList"></div>
+        <button class="add-custom-button" id="addCustomButton" type="button">
+          <span class="add-custom-button__icon" aria-hidden="true">➕</span>
+          <span id="addCustomButtonLabel">Добавить своё упражнение</span>
+        </button>
+      </section>
+
+      <!-- Экран 3: форма добавления своего упражнения -->
+      <section class="screen" id="screen-custom-form" data-screen="custom-form">
+        <form class="custom-form" id="customExerciseForm">
+          <label class="custom-form__label" id="customFormLabel" for="customExerciseInput">
+            Название упражнения
+          </label>
+          <input
+            class="custom-form__input"
+            id="customExerciseInput"
+            type="text"
+            autocomplete="off"
+            maxlength="60"
+          />
+          <button class="custom-form__submit" id="customFormSubmit" type="submit">
+            Сохранить
+          </button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

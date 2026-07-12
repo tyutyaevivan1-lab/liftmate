@@ -1,0 +1,395 @@
+/* ==========================================================================
+   LiftMate — Telegram Web App: брендовая визуальная тема.
+
+   Палитра зафиксирована брендбуком: единственный цветной акцент — неоновый
+   лайм, всё остальное — оттенки чёрного/серого/белого. Тёмная тема основная
+   и задана в :root по умолчанию. Светлая тема подключается через
+   prefers-color-scheme, а Telegram.WebApp.colorScheme (см. app.js) может
+   явно переопределить обе через атрибут data-theme на <html> — переопределение
+   всегда побеждает системную настройку.
+   ========================================================================== */
+
+:root {
+  /* --- Акцент бренда: единственный цветной элемент, одинаков в обеих темах --- */
+  --accent-lime: #c6ff00;
+  --accent-lime-light: #d4ff3f;
+  --accent-lime-gradient: linear-gradient(135deg, var(--accent-lime), var(--accent-lime-light));
+  --accent-contrast-text: #0a0a0a; /* тёмный текст поверх лаймового фона — для контраста */
+
+  /* --- Тёмная тема (основная) — значения по умолчанию --- */
+  --bg-page-from: #0a0a0a;
+  --bg-page-to: #121212;
+  --bg-card: #1a1a1a;
+  --border-card: #2a2a2a;
+  --text-primary: #ffffff;
+  --text-secondary: #8a8a8a;
+  --shadow-card: none;
+  --thumb-bg: rgba(255, 255, 255, 0.06);
+
+  /* --- Типографика --- */
+  --font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* --- Геометрия и анимации --- */
+  --card-radius: 16px;
+  --control-radius: 14px;
+  --transition-duration: 0.28s;
+
+  color-scheme: dark;
+}
+
+/* Светлая тема по системному предпочтению (prefers-color-scheme) — база,
+   применяется только если ничего не переопределено явно через data-theme */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg-page-from: #fafafa;
+    --bg-page-to: #ffffff;
+    --bg-card: #ffffff;
+    --border-card: rgba(10, 10, 10, 0.08);
+    --text-primary: #1a1a1a;
+    --text-secondary: #6e6e6e;
+    --shadow-card: 0 2px 14px rgba(10, 10, 10, 0.07);
+    --thumb-bg: rgba(10, 10, 10, 0.05);
+
+    color-scheme: light;
+  }
+}
+
+/* Явное переопределение темы (app.js выставляет data-theme на <html> на основе
+   Telegram.WebApp.colorScheme) — сильнее prefers-color-scheme в любом случае */
+:root[data-theme="dark"] {
+  --bg-page-from: #0a0a0a;
+  --bg-page-to: #121212;
+  --bg-card: #1a1a1a;
+  --border-card: #2a2a2a;
+  --text-primary: #ffffff;
+  --text-secondary: #8a8a8a;
+  --shadow-card: none;
+  --thumb-bg: rgba(255, 255, 255, 0.06);
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg-page-from: #fafafa;
+  --bg-page-to: #ffffff;
+  --bg-card: #ffffff;
+  --border-card: rgba(10, 10, 10, 0.08);
+  --text-primary: #1a1a1a;
+  --text-secondary: #6e6e6e;
+  --shadow-card: 0 2px 14px rgba(10, 10, 10, 0.07);
+  --thumb-bg: rgba(10, 10, 10, 0.05);
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: linear-gradient(180deg, var(--bg-page-from) 0%, var(--bg-page-to) 100%);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+  transition: background var(--transition-duration) ease, color var(--transition-duration) ease;
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Шапка                                                                   */
+/* ---------------------------------------------------------------------- */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--bg-page-from);
+  border-bottom: 1px solid var(--border-card);
+  transition: background var(--transition-duration) ease, border-color var(--transition-duration) ease;
+}
+
+.back-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-card);
+  border-radius: 50%;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background var(--transition-duration) ease, border-color var(--transition-duration) ease, transform 0.15s ease;
+}
+
+.back-button:active {
+  transform: scale(0.92);
+  border-color: var(--accent-lime);
+  color: var(--accent-lime);
+}
+
+.back-button[hidden] {
+  display: none;
+}
+
+.app-header__title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Контейнер экранов + переходы                                            */
+/* ---------------------------------------------------------------------- */
+
+.screens {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  padding: 16px;
+  padding-bottom: 32px;
+  overflow-y: auto;
+  opacity: 0;
+  transform: translateX(16px);
+  pointer-events: none;
+  transition: opacity var(--transition-duration) ease, transform var(--transition-duration) ease;
+}
+
+.screen--active {
+  position: relative;
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.screen--leaving {
+  transform: translateX(-16px);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Экран 1: сетка категорий                                                */
+/* ---------------------------------------------------------------------- */
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.category-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 22px 12px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--card-radius);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color var(--transition-duration) ease, box-shadow var(--transition-duration) ease;
+  box-shadow: var(--shadow-card);
+}
+
+.category-card:active {
+  transform: scale(0.96);
+  border-color: var(--accent-lime);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-lime) 35%, transparent);
+}
+
+.category-card__icon {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.category-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Экран 2: список упражнений                                              */
+/* ---------------------------------------------------------------------- */
+
+.exercise-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.exercise-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--card-radius);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color var(--transition-duration) ease, box-shadow var(--transition-duration) ease;
+  box-shadow: var(--shadow-card);
+}
+
+.exercise-card:active {
+  transform: scale(0.98);
+  border-color: var(--accent-lime);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-lime) 35%, transparent);
+}
+
+.exercise-card__thumb {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: var(--thumb-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: var(--text-secondary);
+}
+
+.exercise-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.exercise-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.exercise-card__last-result {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Кнопка "Добавить своё упражнение" — второстепенное действие: лаймовая обводка */
+/* ---------------------------------------------------------------------- */
+
+.add-custom-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 13px 16px;
+  border: 1.5px dashed var(--accent-lime);
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--accent-lime);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition-duration) ease, transform 0.15s ease;
+}
+
+.add-custom-button:active {
+  transform: scale(0.98);
+  background: color-mix(in srgb, var(--accent-lime) 12%, transparent);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Экран 3: форма своего упражнения                                        */
+/* ---------------------------------------------------------------------- */
+
+.custom-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.custom-form__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.custom-form__input {
+  padding: 13px 14px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--control-radius);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: 16px;
+  outline: none;
+  transition: border-color var(--transition-duration) ease, box-shadow var(--transition-duration) ease;
+}
+
+.custom-form__input::placeholder {
+  color: var(--text-secondary);
+}
+
+.custom-form__input:focus {
+  border-color: var(--accent-lime);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-lime) 35%, transparent);
+}
+
+/* Основное действие: лаймовый градиентный фон + тёмный текст для контраста */
+.custom-form__submit {
+  margin-top: 6px;
+  padding: 13px 16px;
+  border: none;
+  border-radius: var(--control-radius);
+  background: var(--accent-lime-gradient);
+  color: var(--accent-contrast-text);
+  font-family: var(--font-family);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity var(--transition-duration) ease, filter 0.15s ease;
+}
+
+.custom-form__submit:active {
+  transform: scale(0.98);
+  filter: brightness(0.94);
+}
+
+.custom-form__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
