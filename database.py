@@ -112,6 +112,40 @@ async def init_db() -> None:
         )
         """
     )
+    # Сгенерированные программы тренировок (/program). program_text — готовый ответ для
+    # Telegram (для /my_program), program_data — та же программа в структурированном
+    # JSON (список упражнений с подходами/повторениями/объяснением) для teaser-экрана
+    # в Web App (см. api.py: GET /api/user/{user_id}/program/latest).
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_programs (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            program_text TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    # program_data добавлен позже — ADD COLUMN IF NOT EXISTS на случай, если таблица уже
+    # существовала без этой колонки (на уже развёрнутой базе)
+    await pool.execute("ALTER TABLE user_programs ADD COLUMN IF NOT EXISTS program_data TEXT")
+
+    # Профиль пользователя (мини-опрос перед первой генерацией программы, см.
+    # handlers.cmd_program и fitness_profile.py) — опыт/оборудование/ограничения, чтобы
+    # генерация в program.py была персонализированной. Проходится один раз, дальше
+    # используется сохранённое значение (обновить можно через /update_profile).
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_fitness_profile (
+            user_id BIGINT PRIMARY KEY,
+            experience_months INTEGER,
+            equipment_type TEXT,
+            equipment_details TEXT,
+            limitations TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
 
 
 async def get_last_workout(user_id: int, exercise_name: str) -> Optional[dict]:
@@ -417,6 +451,119 @@ async def update_streak_on_workout(user_id: int, today: Optional[date] = None) -
         "longest_streak": longest_streak,
         "last_workout_date": today.isoformat(),
     }
+
+
+async def get_recent_distinct_exercises(user_id: int, limit: int = 8) -> list:
+    """
+    Возвращает до `limit` последних РАЗНЫХ упражнений пользователя (без учёта регистра/
+    пробелов в названии), каждое — с его самой свежей записью (вес/повторения/подходы/
+    дата), от последнего тренированного к более давнему.
+
+    Используется для составления программы тренировки "на основе истории" (см.
+    program.generate_workout_program) — GPT там нужна не вся история целиком, а компактная
+    сводка того, что и с каким весом пользователь делал в последнее время.
+
+    Берём сырые записи с запасом и дедуплицируем в Python — так проще, чем DISTINCT ON
+    в Postgres, который потребовал бы отдельной сортировки внутри каждой группы.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT * FROM workouts
+        WHERE user_id = $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT 200
+        """,
+        user_id,
+    )
+
+    seen = set()
+    result = []
+    for row in rows:
+        key = row["exercise_name"].strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(dict(row))
+        if len(result) >= limit:
+            break
+
+    return result
+
+
+async def save_user_program(user_id: int, program_text: str, program_data: str) -> int:
+    """
+    Сохраняет сгенерированную программу тренировки. program_data — JSON-строка со
+    структурированным списком упражнений (json.dumps(exercises), см. program.py).
+    Возвращает id новой записи.
+    """
+    pool = await get_pool()
+    return await pool.fetchval(
+        """
+        INSERT INTO user_programs (user_id, program_text, program_data, created_at)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+        """,
+        user_id,
+        program_text,
+        program_data,
+        datetime.now().isoformat(),
+    )
+
+
+async def get_last_user_program(user_id: int) -> Optional[dict]:
+    """Возвращает последнюю сохранённую программу пользователя (для /my_program), либо None."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """
+        SELECT * FROM user_programs
+        WHERE user_id = $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        user_id,
+    )
+    return dict(row) if row else None
+
+
+async def get_fitness_profile(user_id: int) -> Optional[dict]:
+    """Возвращает профиль пользователя (опыт/оборудование/ограничения), либо None, если ещё не заполнен."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM user_fitness_profile WHERE user_id = $1",
+        user_id,
+    )
+    return dict(row) if row else None
+
+
+async def save_fitness_profile(
+    user_id: int,
+    experience_months: Optional[int],
+    equipment_type: Optional[str],
+    equipment_details: Optional[str],
+    limitations: Optional[str],
+) -> None:
+    """Сохраняет (или полностью перезаписывает — см. /update_profile) профиль пользователя."""
+    pool = await get_pool()
+    await pool.execute(
+        """
+        INSERT INTO user_fitness_profile
+            (user_id, experience_months, equipment_type, equipment_details, limitations, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (user_id) DO UPDATE SET
+            experience_months = excluded.experience_months,
+            equipment_type = excluded.equipment_type,
+            equipment_details = excluded.equipment_details,
+            limitations = excluded.limitations,
+            created_at = excluded.created_at
+        """,
+        user_id,
+        experience_months,
+        equipment_type,
+        equipment_details,
+        limitations,
+        datetime.now().isoformat(),
+    )
 
 
 async def get_leaderboard_top(limit: int = 10, user_ids: Optional[list] = None) -> list:

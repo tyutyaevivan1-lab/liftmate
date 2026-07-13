@@ -24,7 +24,18 @@
       "Bash(node --check webapp/app.js)",
       "Bash(python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_settings_endpoint.py)",
       "Bash(pip3 show *)",
-      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_settings_endpoint.py)"
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_settings_endpoint.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile states.py keyboards.py database.py program.py handlers.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_program.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_program_db_and_handlers.py)",
+      "Bash(git mv *)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile handlers.py database.py keyboards.py states.py program.py fitness_profile.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile api.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile api.py database.py handlers.py keyboards.py program.py fitness_profile.py states.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_profile_flow.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_program_with_profile.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_program_latest_endpoint.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile api.py database.py handlers.py keyboards.py program.py fitness_profile.py states.py main.py)"
     ]
   }
 }

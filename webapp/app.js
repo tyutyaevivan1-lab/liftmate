@@ -122,6 +122,34 @@ const UI_TEXT = {
     fr: "Dernier résultat",
   },
   progressLabel: { ru: "Прогресс", en: "Progress", fr: "Progression" },
+  programNavLabel: { ru: "Программа", en: "Program", fr: "Programme" },
+  programTitle: { ru: "Программа тренировки", en: "Workout program", fr: "Programme d'entraînement" },
+  programEmptyText: {
+    ru: "У тебя пока нет сохранённой программы.",
+    en: "You don't have a saved program yet.",
+    fr: "Tu n'as pas encore de programme enregistré.",
+  },
+  programCreateButtonLabel: { ru: "Создать программу", en: "Create a program", fr: "Créer un programme" },
+  programCreateHintText: {
+    ru: "Напиши боту /program, чтобы я её составил.",
+    en: "Message the bot /program and I'll put one together.",
+    fr: "Écris /program au bot pour que je t'en prépare un.",
+  },
+  programUnlockButtonLabel: {
+    ru: "🔓 Разблокировать полную программу",
+    en: "🔓 Unlock the full program",
+    fr: "🔓 Débloquer le programme complet",
+  },
+  programComingSoonText: {
+    ru: "Скоро будет доступно!",
+    en: "Coming soon!",
+    fr: "Bientôt disponible !",
+  },
+  programExportButtonLabel: {
+    ru: "📄 Экспортировать как документ",
+    en: "📄 Export as document",
+    fr: "📄 Exporter en document",
+  },
 };
 
 // Язык интерфейса: подтягивается из настроек пользователя в боте (/language,
@@ -243,6 +271,10 @@ function fetchUserSettings(userId) {
   return fetchFromApi(`/api/user/${userId}/settings`);
 }
 
+function fetchLatestProgram(userId) {
+  return fetchFromApi(`/api/user/${userId}/program/latest`);
+}
+
 // Язык интерфейса синхронизирован с ботом: пользователь один раз выбирает его
 // командой /language в чате, а Web App при каждом открытии подтягивает тот же
 // выбор — отдельного переключателя языка внутри приложения нет.
@@ -277,6 +309,7 @@ const screenElements = {
   exercises: document.getElementById("screen-exercises"),
   "custom-form": document.getElementById("screen-custom-form"),
   "exercise-detail": document.getElementById("screen-exercise-detail"),
+  program: document.getElementById("screen-program"),
 };
 
 const backButton = document.getElementById("backButton");
@@ -308,6 +341,9 @@ function renderHeader() {
     backButton.hidden = false;
   } else if (screen === "exercise-detail") {
     screenTitleEl.textContent = activeExercise ? exerciseName(activeExercise) : t(UI_TEXT.exercisesTitleFallback);
+    backButton.hidden = false;
+  } else if (screen === "program") {
+    screenTitleEl.textContent = t(UI_TEXT.programTitle);
     backButton.hidden = false;
   }
 
@@ -582,6 +618,138 @@ async function loadExerciseDetail(exercise) {
 }
 
 // ---------------------------------------------------------------------------
+// Экран 5: программа тренировки (teaser — первые 2 упражнения открыты всем,
+// остальные заблокированы/размыты для не-premium пользователей)
+// ---------------------------------------------------------------------------
+
+const FREE_EXERCISES_COUNT = 2;
+
+function formatSetsReps(exercise) {
+  // reps — строка: либо диапазон чисел ("8-10"), либо фраза вроде "до отказа"/"to failure" —
+  // слово "повторений"/"reps" грамматически уместно только для числового диапазона
+  const lang = pickLanguage(currentLanguage);
+  const isNumericReps = /^\d+(\s*-\s*\d+)?$/.test(String(exercise.reps).trim());
+
+  if (lang === "ru") {
+    const repsPart = isNumericReps ? `${exercise.reps} повторений` : exercise.reps;
+    return `${exercise.sets} ${pluralizeSetsRu(exercise.sets)} × ${repsPart}`;
+  }
+  if (lang === "fr") {
+    const setsWord = exercise.sets === 1 ? "série" : "séries";
+    const repsPart = isNumericReps ? `${exercise.reps} répétitions` : exercise.reps;
+    return `${exercise.sets} ${setsWord} × ${repsPart}`;
+  }
+  const setsWord = exercise.sets === 1 ? "set" : "sets";
+  const repsPart = isNumericReps ? `${exercise.reps} reps` : exercise.reps;
+  return `${exercise.sets} ${setsWord} × ${repsPart}`;
+}
+
+function buildProgramExerciseCard(exercise, index, locked) {
+  if (locked) {
+    return `
+      <div class="program-exercise-card program-exercise-card--locked">
+        <div class="program-exercise-card__index">${index + 1}</div>
+        <div class="program-exercise-card__body">
+          <div class="program-exercise-card__name">${exercise.name}</div>
+          <div class="program-exercise-card__locked-details">
+            <div class="program-exercise-card__meta">${formatSetsReps(exercise)}</div>
+            <div class="program-exercise-card__why">💡 ${exercise.why}</div>
+          </div>
+        </div>
+        <div class="program-exercise-card__lock-badge" aria-hidden="true">🔒</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="program-exercise-card">
+      <div class="program-exercise-card__index">${index + 1}</div>
+      <div class="program-exercise-card__body">
+        <div class="program-exercise-card__name">${exercise.name}</div>
+        <div class="program-exercise-card__meta">${formatSetsReps(exercise)}</div>
+        <div class="program-exercise-card__why">💡 ${exercise.why}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderProgramEmpty(container) {
+  container.innerHTML = `
+    <div class="program-empty">
+      <p class="program-empty__text">${t(UI_TEXT.programEmptyText)}</p>
+      <p class="program-empty__hint">${t(UI_TEXT.programCreateHintText)}</p>
+      <button class="program-create-button" id="programCreateButton" type="button">${t(UI_TEXT.programCreateButtonLabel)}</button>
+    </div>
+  `;
+  document.getElementById("programCreateButton").addEventListener("click", () => {
+    // Web App не может сама отправить команду в чат — лучшее, что можно сделать,
+    // это закрыть Web App, чтобы пользователь вернулся в чат и написал /program сам
+    if (tg) {
+      tg.close();
+    }
+  });
+}
+
+function renderProgram(container, exercises, isPremium) {
+  const cardsHtml = exercises
+    .map((exercise, index) => buildProgramExerciseCard(exercise, index, !isPremium && index >= FREE_EXERCISES_COUNT))
+    .join("");
+
+  const actionButtonHtml = isPremium
+    ? `<button class="program-export-button" id="programActionButton" type="button">${t(UI_TEXT.programExportButtonLabel)}</button>`
+    : `<button class="program-unlock-button" id="programActionButton" type="button">${t(UI_TEXT.programUnlockButtonLabel)}</button>`;
+
+  container.innerHTML = `
+    <div class="program-exercise-list">${cardsHtml}</div>
+    ${actionButtonHtml}
+  `;
+
+  document.getElementById("programActionButton").addEventListener("click", () => {
+    // Реальная оплата/экспорт подключим позже — пока просто заглушка
+    window.alert(t(UI_TEXT.programComingSoonText));
+  });
+}
+
+async function loadProgramScreen() {
+  const container = document.getElementById("programScreen");
+  container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.loadingText)}</p>`;
+
+  const userId = getTelegramUserId();
+  if (!userId) {
+    container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.notInTelegramText)}</p>`;
+    return;
+  }
+
+  try {
+    const data = await fetchLatestProgram(userId);
+
+    // Пользователь мог уйти с экрана, пока запрос летал туда-обратно
+    if (currentScreen() !== "program") {
+      return;
+    }
+
+    if (!data.exercises || data.exercises.length === 0) {
+      renderProgramEmpty(container);
+      return;
+    }
+
+    renderProgram(container, data.exercises, Boolean(data.is_premium));
+  } catch (error) {
+    console.error("Не удалось загрузить программу тренировки:", error);
+    if (currentScreen() === "program") {
+      container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.errorText)}</p>`;
+    }
+  }
+}
+
+function openProgramScreen() {
+  showScreen("program");
+  loadProgramScreen();
+}
+
+document.getElementById("programNavButton").addEventListener("click", openProgramScreen);
+
+// ---------------------------------------------------------------------------
 // Инициализация
 // ---------------------------------------------------------------------------
 
@@ -593,6 +761,7 @@ async function init() {
   currentLanguage = await detectUserLanguage();
 
   document.getElementById("addCustomButtonLabel").textContent = t(UI_TEXT.addCustom);
+  document.getElementById("programNavButtonLabel").textContent = t(UI_TEXT.programNavLabel);
 
   renderCategories();
   renderHeader();

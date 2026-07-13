@@ -26,7 +26,17 @@
     <main class="screens" id="screens">
       <!-- Экран 1: категории мышц -->
       <section class="screen screen--active" id="screen-categories" data-screen="categories">
+        <button class="program-nav-button" id="programNavButton" type="button">
+          <span class="program-nav-button__icon" aria-hidden="true">🗓</span>
+          <span id="programNavButtonLabel">Программа</span>
+        </button>
         <div class="category-grid" id="categoryGrid"></div>
+      </section>
+
+      <!-- Экран 5: программа тренировки (teaser: первые 2 упражнения открыты всем,
+           остальные заблокированы/размыты, если пользователь не premium) -->
+      <section class="screen" id="screen-program" data-screen="program">
+        <div class="program-screen" id="programScreen"></div>
       </section>
 
       <!-- Экран 2: упражнения выбранной категории -->

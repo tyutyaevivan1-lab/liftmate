@@ -54,7 +54,15 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from config import BOT_TOKEN, WEBAPP_URL
-from database import close_pool, get_last_workout, get_user_language, get_workout_history, init_db
+from database import (
+    close_pool,
+    get_last_user_program,
+    get_last_workout,
+    get_user_language,
+    get_user_stats,
+    get_workout_history,
+    init_db,
+)
 
 # initData считается действительной не дольше суток — после этого Web App должен
 # быть переоткрыт заново (Telegram сам обновляет initData при каждом открытии)
@@ -259,6 +267,22 @@ class UserSettings(BaseModel):
     language: Optional[str]
 
 
+class ProgramExercise(BaseModel):
+    name: str
+    sets: int
+    reps: str
+    why: str
+
+
+class LatestProgramResponse(BaseModel):
+    # None, если у пользователя ещё нет сохранённой программы (не вызывал /program),
+    # либо она была сохранена до появления структурированных данных (program_data) —
+    # в обоих случаях Web App показывает экран "Создать программу" (см. webapp/app.js)
+    exercises: Optional[list[ProgramExercise]] = None
+    created_at: Optional[str] = None
+    is_premium: bool
+
+
 def _to_entry(row: dict) -> WorkoutEntry:
     # created_at хранится как полный ISO-datetime ("2026-07-01T18:32:00.123456"),
     # а Web App'у нужна только дата — берём часть до "T"
@@ -333,6 +357,40 @@ async def get_user_settings(
     language = await get_user_language(user_id)
     logger.info("settings: user_id=%s -> language=%r", user_id, language)
     return UserSettings(language=language)
+
+
+@app.get("/api/user/{user_id}/program/latest", response_model=LatestProgramResponse)
+async def get_latest_program(
+    user_id: int = Path(..., description="Telegram user ID"),
+    telegram_user: dict = Depends(require_telegram_user),
+) -> LatestProgramResponse:
+    """
+    Последняя сгенерированная программа тренировки (/program) в структурированном виде —
+    для teaser-экрана "Программа" в Web App: первые 2 упражнения открыты всем, остальные
+    показаны с размытыми деталями, если пользователь не premium (сам блюр и разблокировка —
+    на стороне фронтенда, см. webapp/app.js). is_premium берётся из user_stats — той же
+    таблицы, что уже используется для лидерборда.
+    """
+    _ensure_matches_authenticated_user(user_id, telegram_user)
+
+    saved = await get_last_user_program(user_id)
+    stats = await get_user_stats(user_id)
+    is_premium = bool(stats["is_premium"]) if stats else False
+
+    if saved is None or not saved.get("program_data"):
+        logger.info("program/latest: user_id=%s -> нет сохранённой программы, is_premium=%s", user_id, is_premium)
+        return LatestProgramResponse(exercises=None, created_at=None, is_premium=is_premium)
+
+    exercises_raw = json.loads(saved["program_data"])
+    logger.info(
+        "program/latest: user_id=%s -> %d упражнений, is_premium=%s",
+        user_id, len(exercises_raw), is_premium,
+    )
+    return LatestProgramResponse(
+        exercises=[ProgramExercise(**item) for item in exercises_raw],
+        created_at=saved["created_at"].split("T")[0],
+        is_premium=is_premium,
+    )
 
 
 # ---------------------------------------------------------------------------

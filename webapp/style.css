@@ -197,6 +197,32 @@ body {
 /* Экран 1: сетка категорий                                                */
 /* ---------------------------------------------------------------------- */
 
+/* Кнопка перехода на экран "Программа" — над сеткой категорий, лаймовый градиент,
+   как основное действие (в отличие от пунктирной "Добавить своё упражнение" на экране 2) */
+.program-nav-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: none;
+  border-radius: var(--control-radius);
+  background: var(--accent-lime-gradient);
+  color: var(--accent-contrast-text);
+  font-family: var(--font-family);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.program-nav-button:active {
+  transform: scale(0.98);
+  filter: brightness(0.94);
+}
+
 .category-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -457,4 +483,134 @@ body {
   font-size: 10px;
   font-weight: 700;
   fill: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Экран 5: программа тренировки (teaser free/premium)                     */
+/* ---------------------------------------------------------------------- */
+
+.program-exercise-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.program-exercise-card {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--card-radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.program-exercise-card__index {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--thumb-bg);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.program-exercise-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.program-exercise-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.program-exercise-card__meta {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-lime);
+}
+
+.program-exercise-card__why {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Заблокированная карточка (не-premium, начиная с 3-го упражнения): название видно,
+   подходы/повторения/объяснение размыты и некликабельны, поверх — иконка замка */
+.program-exercise-card--locked .program-exercise-card__locked-details {
+  filter: blur(5px);
+  user-select: none;
+  pointer-events: none;
+}
+
+.program-exercise-card__lock-badge {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  font-size: 20px;
+}
+
+.program-unlock-button,
+.program-export-button,
+.program-create-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: none;
+  border-radius: var(--control-radius);
+  background: var(--accent-lime-gradient);
+  color: var(--accent-contrast-text);
+  font-family: var(--font-family);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.program-unlock-button:active,
+.program-export-button:active,
+.program-create-button:active {
+  transform: scale(0.98);
+  filter: brightness(0.94);
+}
+
+.program-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-top: 32px;
+  padding: 24px 16px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--card-radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.program-empty__text {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.program-empty__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
 }

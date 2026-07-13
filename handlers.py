@@ -1,5 +1,8 @@
 """Обработчики сообщений и inline-кнопок Telegram-бота LiftMate."""
 
+import json
+from typing import Optional
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -25,6 +28,8 @@ from database import (
     count_user_workouts,
     get_custom_exercise_by_id,
     get_custom_exercises,
+    get_fitness_profile,
+    get_last_user_program,
     get_last_workout,
     get_last_workout_for_user,
     get_leaderboard_top,
@@ -32,13 +37,17 @@ from database import (
     get_user_language,
     get_user_rank,
     redact_database_url,
+    save_fitness_profile,
+    save_user_program,
     set_user_language,
     update_streak_on_workout,
     update_workout_by_id,
 )
 from exercises_data import find_exercise, get_canonical_exercise_name, get_exercise_display_name
 from leaderboard import build_leaderboard_message
-from states import WorkoutStates
+from fitness_profile import parse_experience_months
+from program import generate_workout_program
+from states import ProfileStates, ProgramStates, WorkoutStates
 
 router = Router()
 
@@ -153,6 +162,145 @@ async def cmd_leaderboard(message: Message, state: FSMContext) -> None:
     await message.answer(text)
 
 
+async def _ask_program_source(message: Message, state: FSMContext, language: str) -> None:
+    """Обычный первый вопрос /program (способ составления) — когда профиль уже есть."""
+    await state.set_state(ProgramStates.awaiting_choice)
+    await message.answer(
+        keyboards.ask_program_source_text(language),
+        reply_markup=keyboards.build_program_source_keyboard(language),
+    )
+
+
+async def _start_profile_survey(message: Message, state: FSMContext, *, continue_to_program: bool, language: str) -> None:
+    """
+    Запускает мини-опрос профиля (опыт/оборудование/ограничения) — используется и при
+    первом заходе в /program (профиля ещё нет), и по явному /update_profile.
+    continue_to_program сохраняется в FSM-данных и решает, что делать по окончании опроса:
+    сразу перейти к обычному диалогу /program, либо просто подтвердить сохранение профиля.
+    """
+    await state.set_state(ProfileStates.waiting_for_experience)
+    await state.update_data(continue_to_program=continue_to_program)
+    await message.answer(keyboards.ask_experience_text(language))
+
+
+@router.message(Command("program"))
+async def cmd_program(message: Message, state: FSMContext) -> None:
+    """
+    Команда /program — если профиль пользователя ещё не заполнен, сначала запускает
+    короткий мини-опрос (опыт/оборудование/ограничения, см. states.ProfileStates),
+    иначе сразу переходит к обычному вопросу о способе составления программы.
+    """
+    await state.clear()
+    user_id = message.from_user.id
+    language = await _get_language(user_id, message.from_user)
+
+    profile = await get_fitness_profile(user_id)
+    if profile is None:
+        await _start_profile_survey(message, state, continue_to_program=True, language=language)
+        return
+
+    await _ask_program_source(message, state, language)
+
+
+@router.message(Command("update_profile"))
+async def cmd_update_profile(message: Message, state: FSMContext) -> None:
+    """Команда /update_profile — заново проходит мини-опрос профиля и перезаписывает сохранённые данные."""
+    await state.clear()
+    user_id = message.from_user.id
+    language = await _get_language(user_id, message.from_user)
+
+    await _start_profile_survey(message, state, continue_to_program=False, language=language)
+
+
+@router.callback_query(F.data.startswith(f"{keyboards.EQUIPMENT_CALLBACK_PREFIX}:"))
+async def handle_equipment_selected(callback: CallbackQuery, state: FSMContext) -> None:
+    """Вопрос 2: пользователь выбрал тип оборудования кнопкой — просим необязательное уточнение текстом."""
+    equipment_type = callback.data.split(":", 1)[1]
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+
+    await state.update_data(equipment_type=equipment_type)
+    await state.set_state(ProfileStates.waiting_for_equipment_details)
+
+    await callback.message.edit_text(f"✅ {keyboards.equipment_label(equipment_type, language)}")
+    await callback.answer()
+    await callback.message.answer(keyboards.ask_equipment_details_text(language))
+
+
+async def _ask_limitations(message: Message, state: FSMContext, language: str) -> None:
+    """Вопрос 3: травмы/ограничения — свободный текст либо кнопка "Нет"."""
+    await state.set_state(ProfileStates.waiting_for_limitations)
+    await message.answer(
+        keyboards.ask_limitations_text(language),
+        reply_markup=keyboards.build_limitations_keyboard(language),
+    )
+
+
+async def _finish_profile_survey(
+    message: Message,
+    state: FSMContext,
+    user_id: int,
+    language: str,
+    limitations: Optional[str],
+) -> None:
+    """Сохраняет профиль и либо продолжает в обычный диалог /program, либо просто подтверждает сохранение."""
+    data = await state.get_data()
+    continue_to_program = data.get("continue_to_program", False)
+
+    await save_fitness_profile(
+        user_id,
+        data.get("experience_months"),
+        data.get("equipment_type"),
+        data.get("equipment_details"),
+        limitations,
+    )
+    await state.clear()
+
+    await message.answer(keyboards.profile_saved_text(language))
+    if continue_to_program:
+        await _ask_program_source(message, state, language)
+
+
+@router.callback_query(F.data == keyboards.LIMITATIONS_NONE_CALLBACK)
+async def handle_limitations_none(callback: CallbackQuery, state: FSMContext) -> None:
+    """Вопрос 3, кнопка "Нет" — ограничений нет."""
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+
+    await callback.message.edit_text(f"✅ {keyboards.limitations_none_label(language)}")
+    await callback.answer()
+    await _finish_profile_survey(callback.message, state, user_id, language, limitations=None)
+
+
+@router.message(Command("my_program"))
+async def cmd_my_program(message: Message, state: FSMContext) -> None:
+    """Команда /my_program — показывает последнюю сохранённую программу тренировки."""
+    await state.clear()
+    user_id = message.from_user.id
+    language = await _get_language(user_id, message.from_user)
+
+    saved = await get_last_user_program(user_id)
+    if saved is None:
+        await message.answer(keyboards.no_saved_program_text(language))
+        return
+
+    await message.answer(saved["program_text"])
+
+
+async def _generate_and_send_program(
+    message: Message,
+    user_id: int,
+    *,
+    mode: str,
+    language: str,
+    goal: Optional[str] = None,
+) -> None:
+    """Генерирует программу тренировки через GPT, отправляет её пользователю и сохраняет для /my_program и Web App."""
+    result = await generate_workout_program(user_id, mode, language, goal=goal)
+    await save_user_program(user_id, result["text"], json.dumps(result["exercises"], ensure_ascii=False))
+    await message.answer(result["text"])
+
+
 @router.message(Command("debug_db"))
 async def cmd_debug_db(message: Message, state: FSMContext) -> None:
     """
@@ -207,6 +355,8 @@ async def handle_reply_keyboard_button(message: Message, state: FSMContext) -> N
         await cmd_exercises(message, state)
     elif action == "leaderboard":
         await cmd_leaderboard(message, state)
+    elif action == "program":
+        await cmd_program(message, state)
     elif action == "language":
         await cmd_language(message, state)
 
@@ -357,6 +507,42 @@ async def handle_add_custom_exercise(callback: CallbackQuery, state: FSMContext)
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith(f"{keyboards.PROGRAM_SOURCE_CALLBACK_PREFIX}:"))
+async def handle_program_source_selected(callback: CallbackQuery, state: FSMContext) -> None:
+    """Пользователь выбрал способ составления программы: "по цели" или "на основе истории"."""
+    source = callback.data.split(":", 1)[1]
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+
+    await callback.message.edit_text(f"✅ {keyboards.program_source_label(source, language)}")
+    await callback.answer()
+
+    if source == "goal":
+        await callback.message.answer(
+            keyboards.ask_program_goal_text(language),
+            reply_markup=keyboards.build_program_goal_keyboard(language),
+        )
+        return
+
+    # source == "history" — сразу генерируем и отправляем программу, доп. вопросов не нужно
+    await state.clear()
+    await _generate_and_send_program(callback.message, user_id, mode="history", language=language)
+
+
+@router.callback_query(F.data.startswith(f"{keyboards.PROGRAM_GOAL_CALLBACK_PREFIX}:"))
+async def handle_program_goal_selected(callback: CallbackQuery, state: FSMContext) -> None:
+    """Пользователь выбрал конкретную цель после "по цели" — генерируем и отправляем программу."""
+    goal = callback.data.split(":", 1)[1]
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+
+    await callback.message.edit_text(f"✅ {keyboards.program_goal_label(goal, language)}")
+    await callback.answer()
+
+    await state.clear()
+    await _generate_and_send_program(callback.message, user_id, mode="goal", language=language, goal=goal)
+
+
 @router.callback_query(F.data.startswith(f"{keyboards.EXERCISE_CALLBACK_PREFIX}:"))
 async def handle_exercise_selected(callback: CallbackQuery, state: FSMContext) -> None:
     """Пользователь выбрал конкретное встроенное упражнение из меню."""
@@ -392,6 +578,42 @@ async def handle_custom_exercise_selected(callback: CallbackQuery, state: FSMCon
     await callback.answer()
 
     await _start_exercise_flow(callback.message, user_id, state, exercise_name, language)
+
+
+@router.message(ProfileStates.waiting_for_experience)
+async def handle_profile_experience(message: Message, state: FSMContext) -> None:
+    """Вопрос 1: свободный текст про стаж тренировок — разбирается через GPT в число месяцев."""
+    user_id = message.from_user.id
+    language = await _get_language(user_id, message.from_user)
+
+    experience_months = await parse_experience_months(message.text)
+    await state.update_data(experience_months=experience_months)
+    await state.set_state(None)  # текстовый ответ обработан, дальше — выбор оборудования кнопкой
+
+    await message.answer(
+        keyboards.ask_equipment_text(language),
+        reply_markup=keyboards.build_equipment_keyboard(language),
+    )
+
+
+@router.message(ProfileStates.waiting_for_equipment_details)
+async def handle_profile_equipment_details(message: Message, state: FSMContext) -> None:
+    """Необязательное уточнение оборудования текстом, либо /skip — в обоих случаях идём к вопросу 3."""
+    user_id = message.from_user.id
+    language = await _get_language(user_id, message.from_user)
+
+    equipment_details = None if message.text.strip().lower() == "/skip" else message.text.strip()
+    await state.update_data(equipment_details=equipment_details)
+
+    await _ask_limitations(message, state, language)
+
+
+@router.message(ProfileStates.waiting_for_limitations)
+async def handle_profile_limitations(message: Message, state: FSMContext) -> None:
+    """Вопрос 3, ответ свободным текстом."""
+    user_id = message.from_user.id
+    language = await _get_language(user_id, message.from_user)
+    await _finish_profile_survey(message, state, user_id, language, limitations=message.text.strip())
 
 
 @router.message(WorkoutStates.waiting_for_custom_name)

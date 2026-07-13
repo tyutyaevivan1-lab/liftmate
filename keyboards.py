@@ -21,6 +21,10 @@ CUSTOM_EXERCISE_CALLBACK_PREFIX = "cx"
 ADD_CUSTOM_CALLBACK_PREFIX = "custom"
 BACK_TO_CATEGORIES_CALLBACK = "back_categories"
 LANGUAGE_CALLBACK_PREFIX = "lang"
+PROGRAM_SOURCE_CALLBACK_PREFIX = "prog_src"
+PROGRAM_GOAL_CALLBACK_PREFIX = "prog_goal"
+EQUIPMENT_CALLBACK_PREFIX = "equip"
+LIMITATIONS_NONE_CALLBACK = "limitations_none"
 
 _ADD_CUSTOM_LABEL = {"ru": "➕ Добавить своё упражнение", "en": "➕ Add your own exercise", "fr": "➕ Ajouter mon exercice"}
 _BACK_LABEL = {"ru": "⬅️ Назад к категориям", "en": "⬅️ Back to categories", "fr": "⬅️ Retour aux catégories"}
@@ -43,6 +47,81 @@ _OPEN_WEBAPP_LABEL = {
     "ru": "🌐 Открыть меню упражнений",
     "en": "🌐 Open exercises menu",
     "fr": "🌐 Ouvrir le menu des exercices",
+}
+
+_ASK_PROGRAM_SOURCE_TEXT = {
+    "ru": "Как составить программу?",
+    "en": "How should I build your program?",
+    "fr": "Comment veux-tu construire ton programme ?",
+}
+_PROGRAM_SOURCE_LABELS = {
+    "goal": {"ru": "🎯 По цели", "en": "🎯 By goal", "fr": "🎯 Selon un objectif"},
+    "history": {
+        "ru": "📈 На основе моей истории тренировок",
+        "en": "📈 Based on my workout history",
+        "fr": "📈 Selon mon historique d'entraînement",
+    },
+}
+_ASK_PROGRAM_GOAL_TEXT = {
+    "ru": "Какая у тебя цель?",
+    "en": "What's your goal?",
+    "fr": "Quel est ton objectif ?",
+}
+_PROGRAM_GOAL_LABELS = {
+    "bulk": {"ru": "💪 Набрать массу", "en": "💪 Build muscle", "fr": "💪 Prendre du muscle"},
+    "cut": {"ru": "🔥 Похудеть", "en": "🔥 Lose weight", "fr": "🔥 Perdre du poids"},
+    "endurance": {"ru": "🏃 Выносливость", "en": "🏃 Endurance", "fr": "🏃 Endurance"},
+}
+_NO_SAVED_PROGRAM_TEXT = {
+    "ru": "У тебя пока нет сохранённой программы — набери /program, чтобы я её составил.",
+    "en": "You don't have a saved program yet — try /program and I'll put one together.",
+    "fr": "Tu n'as pas encore de programme enregistré — essaie /program et je t'en prépare un.",
+}
+
+# ---------------------------------------------------------------------------
+# Мини-опрос профиля (опыт/оборудование/ограничения) — один раз перед первой
+# генерацией программы, см. states.ProfileStates и handlers.py
+# ---------------------------------------------------------------------------
+
+_ASK_EXPERIENCE_TEXT = {
+    "ru": "Для начала — короткий опрос, разово, чтобы программа была под тебя. Сколько месяцев/лет ты уже ходишь в зал?",
+    "en": "First — a quick one-time survey so your program actually fits you. How many months/years have you been training?",
+    "fr": "D'abord — un petit questionnaire ponctuel pour que ton programme te corresponde. Depuis combien de mois/années t'entraînes-tu ?",
+}
+_ASK_EQUIPMENT_TEXT = {
+    "ru": "Какое оборудование у тебя есть?",
+    "en": "What equipment do you have access to?",
+    "fr": "Quel équipement as-tu à disposition ?",
+}
+_EQUIPMENT_LABELS = {
+    "free_weights": {
+        "ru": "🏋️ Только свободные веса (гантели/штанга)",
+        "en": "🏋️ Free weights only (dumbbells/barbell)",
+        "fr": "🏋️ Poids libres uniquement (haltères/barre)",
+    },
+    "machines": {"ru": "🎛 Только тренажёры", "en": "🎛 Machines only", "fr": "🎛 Machines uniquement"},
+    "full_gym": {"ru": "🏟 Полный зал", "en": "🏟 Full gym", "fr": "🏟 Salle complète"},
+    "home": {
+        "ru": "🏠 Домашние условия / минимум инвентаря",
+        "en": "🏠 Home / minimal equipment",
+        "fr": "🏠 À la maison / équipement minimal",
+    },
+}
+_ASK_EQUIPMENT_DETAILS_TEXT = {
+    "ru": "Хочешь уточнить точнее? Напиши какое конкретно оборудование доступно, или пропусти этот шаг командой /skip",
+    "en": "Want to be more specific? Type exactly what equipment you have, or skip this step with /skip",
+    "fr": "Tu veux préciser ? Écris quel équipement exactement tu as, ou passe cette étape avec /skip",
+}
+_ASK_LIMITATIONS_TEXT = {
+    "ru": "Есть травмы или ограничения, на которые стоит обратить внимание?",
+    "en": "Any injuries or limitations I should know about?",
+    "fr": "As-tu des blessures ou limitations à prendre en compte ?",
+}
+_LIMITATIONS_NONE_LABEL = {"ru": "🚫 Нет", "en": "🚫 None", "fr": "🚫 Aucune"}
+_PROFILE_SAVED_TEXT = {
+    "ru": "Готово, профиль сохранён! Учту это при составлении программы 💪 (обновить можно в любой момент командой /update_profile)",
+    "en": "Done, profile saved! I'll factor this in when building your program 💪 (update it anytime with /update_profile)",
+    "fr": "C'est fait, profil enregistré ! J'en tiendrai compte pour ton programme 💪 (modifiable à tout moment avec /update_profile)",
 }
 
 # Языковые кнопки: (код языка, подпись). Показывается ДО того, как язык известен,
@@ -82,18 +161,27 @@ _BOT_COMMANDS = {
     "ru": [
         BotCommand(command="start", description="Начать сначала"),
         BotCommand(command="exercises", description="Меню упражнений"),
+        BotCommand(command="program", description="Программа тренировки на сегодня"),
+        BotCommand(command="my_program", description="Последняя сохранённая программа"),
+        BotCommand(command="update_profile", description="Обновить профиль (опыт/оборудование)"),
         BotCommand(command="leaderboard", description="Таблица лидеров"),
         BotCommand(command="language", description="Сменить язык"),
     ],
     "en": [
         BotCommand(command="start", description="Restart"),
         BotCommand(command="exercises", description="Exercise menu"),
+        BotCommand(command="program", description="Today's workout program"),
+        BotCommand(command="my_program", description="Your last saved program"),
+        BotCommand(command="update_profile", description="Update profile (experience/equipment)"),
         BotCommand(command="leaderboard", description="Streak leaderboard"),
         BotCommand(command="language", description="Change language"),
     ],
     "fr": [
         BotCommand(command="start", description="Recommencer"),
         BotCommand(command="exercises", description="Menu des exercices"),
+        BotCommand(command="program", description="Programme d'entraînement du jour"),
+        BotCommand(command="my_program", description="Dernier programme enregistré"),
+        BotCommand(command="update_profile", description="Mettre à jour le profil (expérience/équipement)"),
         BotCommand(command="leaderboard", description="Classement des séries"),
         BotCommand(command="language", description="Changer de langue"),
     ],
@@ -106,6 +194,7 @@ _BOT_COMMANDS = {
 _REPLY_BUTTON_LABELS = {
     "exercises": {"ru": "📋 Упражнения", "en": "📋 Exercises", "fr": "📋 Exercices"},
     "leaderboard": {"ru": "🏆 Лидерборд", "en": "🏆 Leaderboard", "fr": "🏆 Classement"},
+    "program": {"ru": "🗓 Программа", "en": "🗓 Program", "fr": "🗓 Programme"},
     "language": {"ru": "🌐 Язык", "en": "🌐 Language", "fr": "🌐 Langue"},
 }
 
@@ -272,12 +361,19 @@ def get_commands(language: str) -> list:
 
 def build_main_reply_keyboard(language: str) -> ReplyKeyboardMarkup:
     """
-    Постоянная клавиатура внизу экрана — кнопки-алиасы для /exercises, /leaderboard
-    и /language. resize_keyboard=True, чтобы не занимала лишнее место на экране.
+    Постоянная клавиатура внизу экрана — кнопки-алиасы для /exercises, /leaderboard,
+    /program и /language. Два ряда по 2 кнопки, чтобы не было тесно на маленьких экранах.
+    resize_keyboard=True, чтобы не занимала лишнее место.
     """
     lang = pick_language(language)
-    buttons = [KeyboardButton(text=_REPLY_BUTTON_LABELS[action][lang]) for action in ("exercises", "leaderboard", "language")]
-    return ReplyKeyboardMarkup(keyboard=[buttons], resize_keyboard=True)
+
+    def _row(actions: tuple) -> list:
+        return [KeyboardButton(text=_REPLY_BUTTON_LABELS[action][lang]) for action in actions]
+
+    return ReplyKeyboardMarkup(
+        keyboard=[_row(("exercises", "leaderboard")), _row(("program", "language"))],
+        resize_keyboard=True,
+    )
 
 
 def match_reply_button(text: str) -> Optional[str]:
@@ -289,6 +385,112 @@ def match_reply_button(text: str) -> Optional[str]:
         if text in labels.values():
             return action
     return None
+
+
+def build_program_source_keyboard(language: str) -> InlineKeyboardMarkup:
+    """Клавиатура выбора способа составления программы: "по цели" или "на основе истории"."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=_localized(_PROGRAM_SOURCE_LABELS["goal"], language),
+        callback_data=f"{PROGRAM_SOURCE_CALLBACK_PREFIX}:goal",
+    )
+    builder.button(
+        text=_localized(_PROGRAM_SOURCE_LABELS["history"], language),
+        callback_data=f"{PROGRAM_SOURCE_CALLBACK_PREFIX}:history",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def build_program_goal_keyboard(language: str) -> InlineKeyboardMarkup:
+    """Клавиатура выбора цели ("по цели" -> набрать массу / похудеть / выносливость)."""
+    builder = InlineKeyboardBuilder()
+    for goal_key in _PROGRAM_GOAL_LABELS:
+        builder.button(
+            text=_localized(_PROGRAM_GOAL_LABELS[goal_key], language),
+            callback_data=f"{PROGRAM_GOAL_CALLBACK_PREFIX}:{goal_key}",
+        )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def ask_program_source_text(language: str) -> str:
+    """Первый вопрос диалога /program: как составить программу."""
+    return _localized(_ASK_PROGRAM_SOURCE_TEXT, language)
+
+
+def ask_program_goal_text(language: str) -> str:
+    """Второй вопрос (после "по цели"): какая именно цель."""
+    return _localized(_ASK_PROGRAM_GOAL_TEXT, language)
+
+
+def program_source_label(source_key: str, language: str) -> str:
+    """Подпись выбранного способа составления — для подтверждения выбора ("✅ ...")."""
+    return _localized(_PROGRAM_SOURCE_LABELS[source_key], language)
+
+
+def program_goal_label(goal_key: str, language: str) -> str:
+    """Подпись выбранной цели — для подтверждения выбора ("✅ ...")."""
+    return _localized(_PROGRAM_GOAL_LABELS[goal_key], language)
+
+
+def no_saved_program_text(language: str) -> str:
+    """Ответ на /my_program, если у пользователя ещё нет сохранённой программы."""
+    return _localized(_NO_SAVED_PROGRAM_TEXT, language)
+
+
+def ask_experience_text(language: str) -> str:
+    """Вопрос 1 мини-опроса профиля: стаж тренировок (свободный текст)."""
+    return _localized(_ASK_EXPERIENCE_TEXT, language)
+
+
+def ask_equipment_text(language: str) -> str:
+    """Вопрос 2 мини-опроса профиля: какое оборудование доступно."""
+    return _localized(_ASK_EQUIPMENT_TEXT, language)
+
+
+def build_equipment_keyboard(language: str) -> InlineKeyboardMarkup:
+    """Клавиатура выбора типа оборудования (по одной кнопке в ряд)."""
+    builder = InlineKeyboardBuilder()
+    for equipment_key in _EQUIPMENT_LABELS:
+        builder.button(
+            text=_localized(_EQUIPMENT_LABELS[equipment_key], language),
+            callback_data=f"{EQUIPMENT_CALLBACK_PREFIX}:{equipment_key}",
+        )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def equipment_label(equipment_key: str, language: str) -> str:
+    """Подпись выбранного оборудования — для подтверждения выбора ("✅ ...")."""
+    return _localized(_EQUIPMENT_LABELS[equipment_key], language)
+
+
+def ask_equipment_details_text(language: str) -> str:
+    """Уточняющий вопрос после выбора типа оборудования (свободный текст или /skip)."""
+    return _localized(_ASK_EQUIPMENT_DETAILS_TEXT, language)
+
+
+def ask_limitations_text(language: str) -> str:
+    """Вопрос 3 мини-опроса профиля: травмы/ограничения (свободный текст или кнопка "Нет")."""
+    return _localized(_ASK_LIMITATIONS_TEXT, language)
+
+
+def build_limitations_keyboard(language: str) -> InlineKeyboardMarkup:
+    """Клавиатура с единственной кнопкой "Нет" — альтернатива свободному текстовому ответу."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_localized(_LIMITATIONS_NONE_LABEL, language), callback_data=LIMITATIONS_NONE_CALLBACK)
+    return builder.as_markup()
+
+
+def limitations_none_label(language: str) -> str:
+    """Подпись кнопки "Нет" — для подтверждения выбора ("✅ ...")."""
+    return _localized(_LIMITATIONS_NONE_LABEL, language)
+
+
+def profile_saved_text(language: str) -> str:
+    """Подтверждение того, что профиль сохранён (конец мини-опроса /program или /update_profile)."""
+    return _localized(_PROFILE_SAVED_TEXT, language)
 
 
 def format_last_result(row: dict, language: str) -> str:
