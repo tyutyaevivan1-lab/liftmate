@@ -14,7 +14,12 @@
       "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' http://127.0.0.1:8321/api/user/784082804/exercises/bench%20press/history -H 'Authorization: Bearer user=%7B%22id%22%3A%20784082804%2C%20%22first_name%22%3A%20%22Test%22%2C%20%22username%22%3A%20%22testuser%22%7D&auth_date=1783865844&query_id=AAtest123&hash=8b36a7cd987619579345dc150dd95b4d53abe90b2741b60d72a191a981057d9d')",
       "Bash(pkill -f \"uvicorn api:app --host 127.0.0.1 --port 8321\")",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"http://127.0.0.1:8321/api/user/784082804/exercises/bench%20press/last\")",
-      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code}\\\\n' http://127.0.0.1:8321/api/user/784082804/exercises/bench%20press/last -H 'X-Telegram-Init-Data: user=%7B%22id%22%3A784082804%7D&auth_date=123&hash=abc')"
+      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code}\\\\n' http://127.0.0.1:8321/api/user/784082804/exercises/bench%20press/last -H 'X-Telegram-Init-Data: user=%7B%22id%22%3A784082804%7D&auth_date=123&hash=abc')",
+      "Bash(brew list *)",
+      "Bash(python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_placeholders.py)",
+      "Read(//usr/local/bin/**)",
+      "Read(//opt/homebrew/**)",
+      "Bash(find / -maxdepth 4 -iname \"postgres\" -type f)"
     ]
   }
 }

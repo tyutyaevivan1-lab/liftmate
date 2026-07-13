@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery, Message
 
 import history
 import keyboards
-from config import WEBAPP_URL
+from config import DATABASE_URL, WEBAPP_URL
 from ai_parser import (
     generate_clarifying_question,
     generate_friendly_reply,
@@ -21,13 +21,17 @@ from ai_parser import (
 from database import (
     add_custom_exercise,
     add_workout,
+    count_all_workouts,
+    count_user_workouts,
     get_custom_exercise_by_id,
     get_custom_exercises,
     get_last_workout,
     get_last_workout_for_user,
     get_leaderboard_top,
+    get_recent_workouts,
     get_user_language,
     get_user_rank,
+    redact_database_url,
     set_user_language,
     update_streak_on_workout,
     update_workout_by_id,
@@ -147,6 +151,46 @@ async def cmd_leaderboard(message: Message, state: FSMContext) -> None:
 
     text = build_leaderboard_message(top_entries, user_rank_info, language)
     await message.answer(text)
+
+
+@router.message(Command("debug_db"))
+async def cmd_debug_db(message: Message, state: FSMContext) -> None:
+    """
+    ВРЕМЕННАЯ диагностическая команда — убрать после того, как разберёмся, почему
+    записи тренировок не долетают до PostgreSQL (см. add_workout в database.py).
+
+    Показывает: к какому DATABASE_URL реально подключён этот процесс (пароль скрыт),
+    сколько всего строк в workouts (все пользователи), сколько из них — у текущего
+    пользователя, и последние 5 его записей с EXERCISE_NAME В КАВЫЧКАХ (repr) КАК ОН
+    ЕСТЬ в базе — чтобы визуально увидеть лишний пробел или отличие в регистре, из-за
+    которого поиск по конкретному названию может не находить уже сохранённые записи.
+    """
+    await state.clear()
+    user_id = message.from_user.id
+
+    total = await count_all_workouts()
+    mine = await count_user_workouts(user_id)
+    recent = await get_recent_workouts(user_id, limit=5)
+
+    lines = [
+        "🔧 Debug DB",
+        f"Подключение: {redact_database_url(DATABASE_URL)}",
+        f"Всего записей в workouts (все пользователи): {total}",
+        f"Твоих записей (user_id={user_id}): {mine}",
+        "",
+        "Последние 5 твоих записей (exercise_name как в базе, в repr — видны лишние пробелы/регистр):",
+    ]
+
+    if recent:
+        for row in recent:
+            date_str = row["created_at"].split("T")[0]
+            lines.append(
+                f"{row['exercise_name']!r} — {row['weight']}кг × {row['reps']}, {row['sets']} подх. ({date_str})"
+            )
+    else:
+        lines.append("(записей ещё нет)")
+
+    await message.answer("\n".join(lines))
 
 
 @router.message(F.text.in_(keyboards.ALL_REPLY_BUTTON_TEXTS))

@@ -2,8 +2,9 @@
 API-сервер LiftMate для Web App (FastAPI).
 
 Отдаёт Web App'у (https://liftmate-webapp.vercel.app) реальные данные тренировок из
-той же SQLite базы, которую использует Telegram-бот (main.py). Запускается ОТДЕЛЬНЫМ
-процессом от бота — см. пояснение в самом низу файла и в README.md.
+той же PostgreSQL базы (см. database.py, DATABASE_URL), которую использует Telegram-бот
+(main.py). Запускается ОТДЕЛЬНЫМ процессом от бота, в т.ч. на отдельном Railway-сервере —
+общая база данных это и обеспечивает. Пояснение к запуску — в самом низу файла и в README.md.
 
 --------------------------------------------------------------------------------
 Про защиту через Telegram initData (почему это нужно и как это работает)
@@ -53,7 +54,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from config import BOT_TOKEN, WEBAPP_URL
-from database import get_last_workout, get_workout_history, init_db
+from database import close_pool, get_last_workout, get_workout_history, init_db
 
 # initData считается действительной не дольше суток — после этого Web App должен
 # быть переоткрыт заново (Telegram сам обновляет initData при каждом открытии)
@@ -133,13 +134,19 @@ async def handle_validation_error(request: Request, exc: RequestValidationError)
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    """Гарантируем, что таблицы существуют, даже если API запущен раньше бота."""
+    """Гарантируем, что таблицы существуют, даже если API запущен раньше бота (создаёт и пул подключений к PostgreSQL)."""
     await init_db()
     logger.info("LiftMate API запущен. Разрешённые CORS origins: %s", ALLOWED_ORIGINS)
     logger.info(
         "BOT_TOKEN настроен: %s",
         "да" if BOT_TOKEN else "НЕТ — initData никогда не пройдёт проверку! Проверь переменные окружения.",
     )
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    """Аккуратно закрываем пул подключений к PostgreSQL при остановке сервера."""
+    await close_pool()
 
 
 # ---------------------------------------------------------------------------

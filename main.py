@@ -11,14 +11,15 @@ from aiogram.types import MenuButtonWebApp, WebAppInfo
 
 import keyboards
 from config import BOT_TOKEN, WEBAPP_URL
-from database import init_db
+from database import close_pool, init_db
 from handlers import router
 
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
-    # Готовим базу данных (создаём таблицу, если её ещё нет)
+    # Готовим базу данных (создаём таблицы, если их ещё нет; заодно создаёт пул
+    # подключений к PostgreSQL — см. database.get_pool)
     await init_db()
 
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -40,9 +41,12 @@ async def main() -> None:
         await bot.set_my_commands(commands=keyboards.get_commands(lang), language_code=lang)
     await bot.set_my_commands(commands=keyboards.get_commands("en"))
 
-    # Сбрасываем возможный webhook и накопленные апдейты перед началом polling
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    try:
+        # Сбрасываем возможный webhook и накопленные апдейты перед началом polling
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
+    finally:
+        await close_pool()
 
 
 if __name__ == "__main__":
