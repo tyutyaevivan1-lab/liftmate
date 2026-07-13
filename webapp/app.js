@@ -124,8 +124,10 @@ const UI_TEXT = {
   progressLabel: { ru: "Прогресс", en: "Progress", fr: "Progression" },
 };
 
-// Язык интерфейса: пока всегда "ru" по умолчанию — реальная передача языка
-// пользователя (из user_settings бэкенда) будет подключена следующим шагом
+// Язык интерфейса: подтягивается из настроек пользователя в боте (/language,
+// см. GET /api/user/{user_id}/settings) в detectUserLanguage() при старте — до
+// того, как это разрешится, и в случае любой ошибки используем русский по
+// умолчанию, чтобы интерфейс никогда не оставался без текста
 let currentLanguage = "ru";
 
 function pickLanguage(language) {
@@ -235,6 +237,35 @@ function fetchExerciseLast(userId, exerciseName) {
 
 function fetchExerciseHistory(userId, exerciseName) {
   return fetchFromApi(`/api/user/${userId}/exercises/${encodeURIComponent(exerciseName)}/history`);
+}
+
+function fetchUserSettings(userId) {
+  return fetchFromApi(`/api/user/${userId}/settings`);
+}
+
+// Язык интерфейса синхронизирован с ботом: пользователь один раз выбирает его
+// командой /language в чате, а Web App при каждом открытии подтягивает тот же
+// выбор — отдельного переключателя языка внутри приложения нет.
+async function detectUserLanguage() {
+  const userId = getTelegramUserId();
+  if (!userId) {
+    // Открыто вне Telegram (например, в браузере при разработке) — user_id
+    // взять неоткуда, поэтому используем язык по умолчанию
+    return "ru";
+  }
+
+  try {
+    const settings = await fetchUserSettings(userId);
+    if (settings && settings.language) {
+      return pickLanguage(settings.language);
+    }
+  } catch (error) {
+    console.error("Не удалось получить язык пользователя, использую русский по умолчанию:", error);
+  }
+
+  // Пользователь ещё ни разу не вызывал /language в боте (settings.language === null)
+  // либо запрос не удался — в обоих случаях просто остаёмся на русском
+  return "ru";
 }
 
 // ---------------------------------------------------------------------------
@@ -554,8 +585,12 @@ async function loadExerciseDetail(exercise) {
 // Инициализация
 // ---------------------------------------------------------------------------
 
-function init() {
+async function init() {
   initTelegram();
+
+  // Ждём язык ДО первого рендера экранов, иначе пользователь на долю секунды
+  // увидит русский интерфейс, даже если в боте выбран другой язык
+  currentLanguage = await detectUserLanguage();
 
   document.getElementById("addCustomButtonLabel").textContent = t(UI_TEXT.addCustom);
 
@@ -563,4 +598,6 @@ function init() {
   renderHeader();
 }
 
-document.addEventListener("DOMContentLoaded", init);
+document.addEventListener("DOMContentLoaded", () => {
+  init();
+});

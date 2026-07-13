@@ -54,7 +54,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from config import BOT_TOKEN, WEBAPP_URL
-from database import close_pool, get_last_workout, get_workout_history, init_db
+from database import close_pool, get_last_workout, get_user_language, get_workout_history, init_db
 
 # initData считается действительной не дольше суток — после этого Web App должен
 # быть переоткрыт заново (Telegram сам обновляет initData при каждом открытии)
@@ -253,6 +253,12 @@ class WorkoutEntry(BaseModel):
     sets: int
 
 
+class UserSettings(BaseModel):
+    # None, если пользователь ещё ни разу не вызывал /language в боте — Web App
+    # в этом случае сам решает, какой язык показать по умолчанию (см. webapp/app.js)
+    language: Optional[str]
+
+
 def _to_entry(row: dict) -> WorkoutEntry:
     # created_at хранится как полный ISO-datetime ("2026-07-01T18:32:00.123456"),
     # а Web App'у нужна только дата — берём часть до "T"
@@ -311,6 +317,22 @@ async def get_exercise_last(
         user_id, exercise_name, normalized_name, "найдена" if row else "нет записей",
     )
     return _to_entry(row) if row else None
+
+
+@app.get("/api/user/{user_id}/settings", response_model=UserSettings)
+async def get_user_settings(
+    user_id: int = Path(..., description="Telegram user ID"),
+    telegram_user: dict = Depends(require_telegram_user),
+) -> UserSettings:
+    """
+    Язык интерфейса, который пользователь уже выбрал в боте через /language —
+    Web App использует его же, без отдельного выбора языка внутри самого приложения.
+    """
+    _ensure_matches_authenticated_user(user_id, telegram_user)
+
+    language = await get_user_language(user_id)
+    logger.info("settings: user_id=%s -> language=%r", user_id, language)
+    return UserSettings(language=language)
 
 
 # ---------------------------------------------------------------------------

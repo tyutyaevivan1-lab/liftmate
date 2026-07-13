@@ -4,3 +4,5 @@ __pycache__/
 liftmate.db
 venv/
 .venv/
+.vercel
+.env*

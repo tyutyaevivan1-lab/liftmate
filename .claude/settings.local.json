@@ -19,7 +19,12 @@
       "Bash(python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_placeholders.py)",
       "Read(//usr/local/bin/**)",
       "Read(//opt/homebrew/**)",
-      "Bash(find / -maxdepth 4 -iname \"postgres\" -type f)"
+      "Bash(find / -maxdepth 4 -iname \"postgres\" -type f)",
+      "Bash(python3 -m py_compile api.py database.py)",
+      "Bash(node --check webapp/app.js)",
+      "Bash(python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_settings_endpoint.py)",
+      "Bash(pip3 show *)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_settings_endpoint.py)"
     ]
   }
 }
