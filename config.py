@@ -16,6 +16,11 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "https://liftmate-webapp.vercel.app")
 # плагина PostgreSQL к проекту — ничего указывать руками не нужно. Для локальной
 # разработки нужно завести .env самому (см. подсказку в ValueError ниже и README.md).
 DATABASE_URL = os.getenv("DATABASE_URL")
+# Токен ОДНОГО Telegraph-аккаунта бота (см. program.py: _get_telegraph_client) — создаётся
+# один раз через create_account() и переиспользуется для всех страниц с программами
+# тренировок. Необязателен: если не задан (или Telegraph недоступен), программа на
+# несколько дней отправляется текстом отдельными сообщениями по дням (см. program.publish_program).
+TELEGRAPH_ACCESS_TOKEN = os.getenv("TELEGRAPH_ACCESS_TOKEN")
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не найден. Проверь файл .env (см. .env.example)")

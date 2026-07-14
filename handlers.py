@@ -53,6 +53,7 @@ from program import (
     generate_split_program,
     generate_workout_program,
     get_split_options,
+    publish_program,
     split_label,
 )
 from states import ProfileStates, ProgramStates, WorkoutStates
@@ -293,7 +294,12 @@ async def handle_limitations_none(callback: CallbackQuery, state: FSMContext) ->
 
 @router.message(Command("my_program"))
 async def cmd_my_program(message: Message, state: FSMContext) -> None:
-    """Команда /my_program — показывает последнюю сохранённую программу тренировки."""
+    """
+    Команда /my_program — показывает последнюю сохранённую программу тренировки. Публикуем
+    заново через Telegraph (а не просто пересылаем сохранённый program_text напрямую) —
+    для многодневного сплита сохранённый текст может превышать лимит Telegram в 4096
+    символов, и send_message с ним точно так же упал бы, как и при самой генерации.
+    """
     await state.clear()
     user_id = message.from_user.id
     language = await _get_language(user_id, message.from_user)
@@ -303,7 +309,14 @@ async def cmd_my_program(message: Message, state: FSMContext) -> None:
         await message.answer(keyboards.no_saved_program_text(language))
         return
 
-    await message.answer(saved["program_text"])
+    if not saved.get("program_data"):
+        # Старая запись без структурированных данных (до появления program_data) —
+        # ничего другого не остаётся, кроме как прислать как есть
+        await message.answer(saved["program_text"])
+        return
+
+    days = json.loads(saved["program_data"])["days"]
+    await publish_program(message.answer, days, language, message.from_user.full_name)
 
 
 async def _generate_and_send_program(
@@ -312,20 +325,25 @@ async def _generate_and_send_program(
     *,
     mode: str,
     language: str,
+    user_display_name: str,
     goal: Optional[str] = None,
 ) -> None:
     """
     Генерирует программу тренировки (один день — "по цели"/"история") через GPT,
-    отправляет её пользователю и сохраняет для /my_program и Web App. Список упражнений
-    оборачивается в {"days": [...]} — тот же формат хранения, что и у многодневного
-    "Сплита на неделю" (см. _generate_and_send_split_program), с единственным днём без
-    названия (day_title=None) — так Web App работает с ОДНОЙ структурой независимо от
-    того, сколько дней в программе.
+    публикует её пользователю (см. program.publish_program) и сохраняет для /my_program
+    и Web App. Список упражнений оборачивается в {"days": [...]} — тот же формат
+    хранения, что и у многодневного "Сплита на неделю" (см. _generate_and_send_split_program),
+    с единственным днём без названия (day_title=None) — так Web App работает с ОДНОЙ
+    структурой независимо от того, сколько дней в программе.
+
+    user_display_name передаётся явно, а не берётся из message.from_user — здесь message
+    это callback.message (сообщение БОТА), а не сообщение пользователя.
     """
     result = await generate_workout_program(user_id, mode, language, goal=goal)
-    program_data = json.dumps({"days": [{"day_title": None, "exercises": result["exercises"]}]}, ensure_ascii=False)
+    days = [{"day_title": None, "exercises": result["exercises"]}]
+    program_data = json.dumps({"days": days}, ensure_ascii=False)
     await save_user_program(user_id, result["text"], program_data)
-    await message.answer(result["text"])
+    await publish_program(message.answer, days, language, user_display_name)
 
 
 # ---------------------------------------------------------------------------
@@ -500,18 +518,25 @@ async def handle_split_goal_selected(callback: CallbackQuery, state: FSMContext)
     await callback.answer()
 
     await state.clear()
-    await _generate_and_send_split_program(callback.message, user_id, goal, language)
+    await _generate_and_send_split_program(callback.message, user_id, goal, language, callback.from_user.full_name)
 
 
-async def _generate_and_send_split_program(message: Message, user_id: int, goal: str, language: str) -> None:
-    """Генерирует недельную программу по сохранённому в профиле сплиту, отправляет и сохраняет."""
+async def _generate_and_send_split_program(
+    message: Message, user_id: int, goal: str, language: str, user_display_name: str
+) -> None:
+    """
+    Генерирует недельную программу по сохранённому в профиле сплиту, публикует (см.
+    program.publish_program) и сохраняет. user_display_name передаётся явно, а не берётся
+    из message.from_user — здесь message это callback.message (сообщение БОТА), а не
+    сообщение пользователя, и message.from_user был бы самим ботом.
+    """
     profile = await get_fitness_profile(user_id)
     chosen_split = (profile or {}).get("chosen_split") or "full_body"
 
     result = await generate_split_program(user_id, chosen_split, goal, language)
     program_data = json.dumps({"days": result["days"]}, ensure_ascii=False)
     await save_user_program(user_id, result["text"], program_data)
-    await message.answer(result["text"])
+    await publish_program(message.answer, result["days"], language, user_display_name)
 
 
 @router.message(Command("debug_db"))
@@ -743,7 +768,9 @@ async def handle_program_source_selected(callback: CallbackQuery, state: FSMCont
 
     # source == "history" — сразу генерируем и отправляем программу, доп. вопросов не нужно
     await state.clear()
-    await _generate_and_send_program(callback.message, user_id, mode="history", language=language)
+    await _generate_and_send_program(
+        callback.message, user_id, mode="history", language=language, user_display_name=callback.from_user.full_name
+    )
 
 
 @router.callback_query(F.data.startswith(f"{keyboards.PROGRAM_GOAL_CALLBACK_PREFIX}:"))
@@ -757,7 +784,9 @@ async def handle_program_goal_selected(callback: CallbackQuery, state: FSMContex
     await callback.answer()
 
     await state.clear()
-    await _generate_and_send_program(callback.message, user_id, mode="goal", language=language, goal=goal)
+    await _generate_and_send_program(
+        callback.message, user_id, mode="goal", language=language, goal=goal, user_display_name=callback.from_user.full_name
+    )
 
 
 @router.callback_query(F.data.startswith(f"{keyboards.EXERCISE_CALLBACK_PREFIX}:"))
