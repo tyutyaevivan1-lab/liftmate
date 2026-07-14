@@ -10,6 +10,8 @@ Railway), но оба читают/пишут в одну и ту же PostgreSQ
 рекомендуемо для asyncpg, пул создаётся лениво при первом обращении к базе.
 """
 
+import asyncio
+import functools
 import logging
 from datetime import date, datetime
 from typing import Optional
@@ -22,6 +24,48 @@ from config import DATABASE_URL
 logger = logging.getLogger("liftmate.database")
 
 _pool: Optional[asyncpg.Pool] = None
+
+# Ошибки, при которых имеет смысл повторить попытку: все они означают, что соединение
+# из пула оказалось мертво (например, оборвано сервером/прокси по таймауту простоя, см.
+# get_pool) ДО того, как запрос реально ушёл на сервер — поэтому повторная попытка
+# безопасна и не рискует выполнить операцию дважды.
+_RETRYABLE_DB_ERRORS = (
+    asyncpg.exceptions.ConnectionDoesNotExistError,
+    asyncpg.exceptions.ConnectionFailureError,
+    asyncpg.exceptions.InterfaceError,
+    OSError,
+)
+
+
+def _with_db_retry(attempts: int = 2):
+    """
+    Декоратор для функций записи в БД: при обрыве соединения (см. _RETRYABLE_DB_ERRORS)
+    повторяет попытку до `attempts` раз с небольшой паузой, прежде чем дать ошибке
+    всплыть наружу. Оборачивает функции целиком (а не одно конкретное соединение),
+    поэтому повторная попытка идёт через pool.execute/fetchval и сама берёт новое
+    соединение из пула — специально управлять соединениями вручную не нужно.
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_error = None
+            for attempt in range(1, attempts + 1):
+                try:
+                    return await func(*args, **kwargs)
+                except _RETRYABLE_DB_ERRORS as exc:
+                    last_error = exc
+                    logger.warning(
+                        "%s: обрыв соединения с БД (попытка %d/%d): %s",
+                        func.__name__, attempt, attempts, exc,
+                    )
+                    if attempt < attempts:
+                        await asyncio.sleep(0.5)
+            raise last_error
+
+        return wrapper
+
+    return decorator
 
 
 def redact_database_url(url: str) -> str:
@@ -44,11 +88,31 @@ def redact_database_url(url: str) -> str:
 
 
 async def get_pool() -> asyncpg.Pool:
-    """Возвращает общий пул подключений к PostgreSQL, создавая его при первом обращении."""
+    """
+    Возвращает общий пул подключений к PostgreSQL, создавая его при первом обращении.
+
+    max_inactive_connection_lifetime=60 — asyncpg сам закрывает и пересоздаёт соединения
+    пула, которые простояли без использования дольше 60 секунд. Без этого параметра
+    Railway/Postgres (или прокси перед ним) молча обрывает простаивающее соединение по
+    своему собственному таймауту, а asyncpg этого не замечает и продолжает считать его
+    рабочим — из-за этого при генерации программы тренировок (/program), где между
+    чтением профиля из БД и записью готовой программы проходит много секунд на
+    последовательные вызовы GPT (особенно у сплитов с несколькими днями, например
+    ppl_double), запись в конце иногда падала с
+    ConnectionDoesNotExistError: connection was closed in the middle of operation —
+    пул выдавал под эту запись соединение, которое сервер уже закрыл, пока шла генерация.
+
+    command_timeout=60 — защита от того, чтобы отдельный запрос завис навсегда, если
+    соединение всё-таки оборвётся посреди выполнения.
+    """
     global _pool
     if _pool is None:
         logger.info("Создаю пул подключений к PostgreSQL: %s", redact_database_url(DATABASE_URL))
-        _pool = await asyncpg.create_pool(DATABASE_URL)
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            max_inactive_connection_lifetime=60,
+            command_timeout=60,
+        )
         logger.info("Пул подключений к PostgreSQL создан")
     return _pool
 
@@ -201,6 +265,7 @@ async def get_workout_history(user_id: int, exercise_name: str) -> list:
     return [dict(row) for row in rows]
 
 
+@_with_db_retry()
 async def add_workout(
     user_id: int,
     exercise_name: str,
@@ -310,6 +375,7 @@ async def get_last_workout_for_user(user_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
+@_with_db_retry()
 async def update_workout_by_id(workout_id: int, weight: float, reps: int, sets: int) -> None:
     """Обновляет уже существующую запись о тренировке новыми абсолютными значениями."""
     pool = await get_pool()
@@ -322,6 +388,7 @@ async def update_workout_by_id(workout_id: int, weight: float, reps: int, sets: 
     )
 
 
+@_with_db_retry()
 async def add_custom_exercise(user_id: int, exercise_name: str, category: str) -> int:
     """Сохраняет упражнение, добавленное пользователем вручную через меню. Возвращает его id."""
     pool = await get_pool()
@@ -373,6 +440,7 @@ async def get_user_language(user_id: int) -> Optional[str]:
     )
 
 
+@_with_db_retry()
 async def set_user_language(user_id: int, language: str) -> None:
     """Сохраняет (или обновляет) явно выбранный пользователем язык интерфейса."""
     pool = await get_pool()
@@ -394,6 +462,7 @@ async def get_user_stats(user_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
+@_with_db_retry()
 async def update_streak_on_workout(user_id: int, today: Optional[date] = None) -> dict:
     """
     Обновляет серию тренировок пользователя при записи НОВОГО подхода (вызывается один
@@ -497,6 +566,7 @@ async def get_recent_distinct_exercises(user_id: int, limit: int = 8) -> list:
     return result
 
 
+@_with_db_retry()
 async def save_user_program(user_id: int, program_text: str, program_data: str) -> int:
     """
     Сохраняет сгенерированную программу тренировки. program_data — JSON-строка со
@@ -542,6 +612,7 @@ async def get_fitness_profile(user_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
+@_with_db_retry()
 async def save_fitness_profile(
     user_id: int,
     experience_months: Optional[int],
@@ -585,6 +656,7 @@ async def save_fitness_profile(
     )
 
 
+@_with_db_retry()
 async def update_split_preference(user_id: int, days_per_week: int, chosen_split: str) -> None:
     """
     Точечно обновляет только days_per_week/chosen_split — используется в flow "Сплит на
