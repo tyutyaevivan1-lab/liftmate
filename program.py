@@ -52,16 +52,17 @@ _PROFILE_INSTRUCTIONS = """
 _SINGLE_DAY_OUTPUT_INSTRUCTIONS = """
 Верни ТОЛЬКО валидный JSON без пояснений и markdown, строго такой структуры:
 {
-  "text": "полный текст сообщения пользователю НА ЯЗЫКЕ language, без markdown-разметки — тёплая вводная фраза, затем пронумерованный список из 4-6 упражнений вида 'Название — X подхода(ов) × Y-Z повторений — краткое объяснение почему', и в конце короткая бодрая фраза-напутствие с эмодзи 💪",
+  "intro": "одна тёплая вводная фраза НА ЯЗЫКЕ language, без markdown-разметки (например 'Взял твою цель — вот что предлагаю на сегодня, бро:')",
   "exercises": [
     {"name": "название упражнения", "sets": число_подходов, "reps": "диапазон повторений строкой, например '8-10' или 'до отказа'", "why": "одна короткая фраза — почему это упражнение в программе"}
-  ]
+  ],
+  "outro": "одна короткая бодрая фраза-напутствие с эмодзи 💪 НА ЯЗЫКЕ language"
 }
 
 ВАЖНО:
 - НЕ указывай конкретный вес — только количество подходов и повторений (или "до отказа"), пользователь сам вводит вес при выполнении.
-- Массив "exercises" должен ТОЧНО соответствовать пронумерованному списку в "text": то же количество упражнений, в том же порядке, те же значения sets/reps, и то же "why" (в "text" оно просто вписано в предложение, а не отдельным полем).
-- Все текстовые поля ("text", "name", "why") — на языке "language" (пиши как носитель этого языка, не переводи дословно с русского).
+- НЕ собирай сам нумерованный список текстом — "intro" и "outro" это ТОЛЬКО отдельные фразы до и после списка (список из exercises соберёт код, каждое упражнение отдельной строкой).
+- Все текстовые поля ("intro", "outro", "name", "why") — на языке "language" (пиши как носитель этого языка, не переводи дословно с русского).
 """
 
 _PROFILE_AND_OUTPUT_INSTRUCTIONS = _PROFILE_INSTRUCTIONS + _SINGLE_DAY_OUTPUT_INSTRUCTIONS
@@ -175,16 +176,25 @@ def _profile_payload(profile: Optional[dict]) -> dict:
 
 def _parse_program_response(raw_content: str, language: str) -> dict:
     """
-    Разбирает JSON-ответ GPT в {"text": str, "exercises": list}. При некорректной структуре
-    (не тот формат, пустой список упражнений и т.п.) откатывается на запасной шаблон —
-    лучше стабильная дженерик-программа, чем сломанный teaser-экран в Web App.
+    Разбирает JSON-ответ GPT в {"intro": str, "exercises": list, "outro": str} и собирает
+    финальный "text" ДЕТЕРМИНИРОВАННО в Python (см. _format_exercise_line) — каждое
+    упражнение гарантированно на своей строке. Раньше GPT сам собирал весь "text" одним
+    полем, и иногда писал список без переносов строк одним абзацем (инструкция "сделай
+    список" не гарантирует реальных \\n внутри строки JSON) — теперь перенос строк не
+    зависит от того, как GPT понял промпт, ровно как уже было сделано для сплит-программы
+    (см. _assemble_week_text).
+
+    При некорректной структуре (не тот формат, пустой список упражнений и т.п.)
+    откатывается на запасной шаблон — лучше стабильная дженерик-программа, чем сломанный
+    teaser-экран в Web App.
     """
     data = json.loads(raw_content)
-    text = data.get("text")
+    intro = data.get("intro")
+    outro = data.get("outro")
     exercises = data.get("exercises")
 
-    if not text or not isinstance(exercises, list) or not exercises:
-        raise ValueError("GPT вернул программу без текста или без списка упражнений")
+    if not intro or not outro or not isinstance(exercises, list) or not exercises:
+        raise ValueError("GPT вернул программу без intro/outro или без списка упражнений")
 
     normalized_exercises = [
         {
@@ -195,7 +205,14 @@ def _parse_program_response(raw_content: str, language: str) -> dict:
         }
         for item in exercises
     ]
-    return {"text": text.strip(), "exercises": normalized_exercises}
+
+    lines = [intro.strip(), ""]
+    for index, exercise in enumerate(normalized_exercises):
+        lines.append(_format_exercise_line(index, exercise, language))
+    lines.append("")
+    lines.append(outro.strip())
+
+    return {"text": "\n".join(lines), "exercises": normalized_exercises}
 
 
 async def _call_gpt_for_program(system_prompt: str, payload: dict, language: str) -> dict:
