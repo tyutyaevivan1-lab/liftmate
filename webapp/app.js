@@ -150,6 +150,11 @@ const UI_TEXT = {
     en: "📄 Export as document",
     fr: "📄 Exporter en document",
   },
+  programShortenButtonLabel: {
+    ru: "✂️ Сократить программу",
+    en: "✂️ Shorten the program",
+    fr: "✂️ Raccourcir le programme",
+  },
 };
 
 // Язык интерфейса: подтягивается из настроек пользователя в боте (/language,
@@ -273,6 +278,25 @@ function fetchUserSettings(userId) {
 
 function fetchLatestProgram(userId) {
   return fetchFromApi(`/api/user/${userId}/program/latest`);
+}
+
+async function postShortenProgram(userId, targetExerciseCount) {
+  const response = await fetch(`${API_BASE_URL}/api/user/${userId}/program/shorten`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${getInitData()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ target_exercise_count: targetExerciseCount }),
+  });
+
+  if (!response.ok) {
+    const error = new Error(`API /program/shorten вернул ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
 }
 
 // Язык интерфейса синхронизирован с ботом: пользователь один раз выбирает его
@@ -618,11 +642,19 @@ async function loadExerciseDetail(exercise) {
 }
 
 // ---------------------------------------------------------------------------
-// Экран 5: программа тренировки (teaser — первые 2 упражнения открыты всем,
-// остальные заблокированы/размыты для не-premium пользователей)
+// Экран 5: программа тренировки — может быть из нескольких дней (сплит на неделю)
+// или из одного (по цели / на основе истории). Teaser: в КАЖДОМ дне первые 2
+// упражнения открыты всем, остальные заблокированы/размыты для не-premium.
 // ---------------------------------------------------------------------------
 
 const FREE_EXERCISES_COUNT = 2;
+const SHORTEN_TARGET_EXERCISE_COUNT = 4;
+
+// Текущая программа и активная вкладка дня — хранятся, чтобы переключение дней и
+// "Сократить программу" могли перерисовать экран без повторного запроса к API
+let latestProgramDays = [];
+let latestProgramIsPremium = false;
+let activeProgramDayIndex = 0;
 
 function formatSetsReps(exercise) {
   // reps — строка: либо диапазон чисел ("8-10"), либо фраза вроде "до отказа"/"to failure" —
@@ -690,24 +722,92 @@ function renderProgramEmpty(container) {
   });
 }
 
-function renderProgram(container, exercises, isPremium) {
-  const cardsHtml = exercises
+function dayTabLabel(day, index) {
+  if (day.day_title) {
+    return day.day_title;
+  }
+  // Запасной вариант, если day_title почему-то пуст (не должно происходить в норме)
+  const lang = pickLanguage(currentLanguage);
+  const template = { ru: "День {n}", en: "Day {n}", fr: "Jour {n}" }[lang];
+  return template.replace("{n}", index + 1);
+}
+
+function buildDayTabsHtml(days, activeIndex) {
+  if (days.length <= 1) {
+    return "";
+  }
+  const tabsHtml = days
+    .map((day, index) => {
+      const activeClass = index === activeIndex ? " program-day-tab--active" : "";
+      return `<button class="program-day-tab${activeClass}" type="button" data-day-index="${index}">${dayTabLabel(day, index)}</button>`;
+    })
+    .join("");
+  return `<div class="program-day-tabs">${tabsHtml}</div>`;
+}
+
+function renderProgram(container) {
+  const days = latestProgramDays;
+  const isPremium = latestProgramIsPremium;
+  const activeDay = days[activeProgramDayIndex];
+
+  const cardsHtml = activeDay.exercises
     .map((exercise, index) => buildProgramExerciseCard(exercise, index, !isPremium && index >= FREE_EXERCISES_COUNT))
     .join("");
 
-  const actionButtonHtml = isPremium
-    ? `<button class="program-export-button" id="programActionButton" type="button">${t(UI_TEXT.programExportButtonLabel)}</button>`
+  // "Сократить программу" — premium-функция, для free вообще не показываем кнопку
+  // (не просто прячем через CSS — её нет в DOM), а не заглушку-апселл
+  const actionButtonsHtml = isPremium
+    ? `
+      <button class="program-export-button" id="programExportButton" type="button">${t(UI_TEXT.programExportButtonLabel)}</button>
+      <button class="program-shorten-button" id="programShortenButton" type="button">${t(UI_TEXT.programShortenButtonLabel)}</button>
+    `
     : `<button class="program-unlock-button" id="programActionButton" type="button">${t(UI_TEXT.programUnlockButtonLabel)}</button>`;
 
   container.innerHTML = `
+    ${buildDayTabsHtml(days, activeProgramDayIndex)}
     <div class="program-exercise-list">${cardsHtml}</div>
-    ${actionButtonHtml}
+    ${actionButtonsHtml}
   `;
 
-  document.getElementById("programActionButton").addEventListener("click", () => {
-    // Реальная оплата/экспорт подключим позже — пока просто заглушка
-    window.alert(t(UI_TEXT.programComingSoonText));
+  container.querySelectorAll(".program-day-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      activeProgramDayIndex = Number(tab.dataset.dayIndex);
+      renderProgram(container);
+    });
   });
+
+  if (isPremium) {
+    document.getElementById("programExportButton").addEventListener("click", () => {
+      // Реальный экспорт подключим позже — пока просто заглушка
+      window.alert(t(UI_TEXT.programComingSoonText));
+    });
+    document.getElementById("programShortenButton").addEventListener("click", () => handleShortenProgram(container));
+  } else {
+    document.getElementById("programActionButton").addEventListener("click", () => {
+      // Реальная оплата подключим позже — пока просто заглушка
+      window.alert(t(UI_TEXT.programComingSoonText));
+    });
+  }
+}
+
+async function handleShortenProgram(container) {
+  const userId = getTelegramUserId();
+  if (!userId) {
+    return;
+  }
+
+  try {
+    const data = await postShortenProgram(userId, SHORTEN_TARGET_EXERCISE_COUNT);
+    latestProgramDays = data.days || [];
+    latestProgramIsPremium = Boolean(data.is_premium);
+    if (activeProgramDayIndex >= latestProgramDays.length) {
+      activeProgramDayIndex = 0;
+    }
+    renderProgram(container);
+  } catch (error) {
+    console.error("Не удалось сократить программу:", error);
+    window.alert(t(UI_TEXT.errorText));
+  }
 }
 
 async function loadProgramScreen() {
@@ -728,12 +828,15 @@ async function loadProgramScreen() {
       return;
     }
 
-    if (!data.exercises || data.exercises.length === 0) {
+    if (!data.days || data.days.length === 0) {
       renderProgramEmpty(container);
       return;
     }
 
-    renderProgram(container, data.exercises, Boolean(data.is_premium));
+    latestProgramDays = data.days;
+    latestProgramIsPremium = Boolean(data.is_premium);
+    activeProgramDayIndex = 0;
+    renderProgram(container);
   } catch (error) {
     console.error("Не удалось загрузить программу тренировки:", error);
     if (currentScreen() === "program") {

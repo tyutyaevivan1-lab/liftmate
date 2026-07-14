@@ -22,6 +22,15 @@ class ProgramStates(StatesGroup):
     # (как и у остальных FSM-диалогов, см. handlers.py).
     awaiting_choice = State()
 
+    # Ветка "Сплит на неделю" (см. handlers._start_split_flow): ждём выбора частоты
+    # тренировок в неделю (кнопки 1-2/3/4/5-6) — спрашивается лениво, только при первом
+    # выборе этой ветки, дальше сохраняется в fitness_profile.days_per_week
+    awaiting_frequency = State()
+
+    # Ждём выбора цели именно в рамках сплит-флоу (свои callback'и, отдельные от
+    # обычного "по цели" — чтобы не перепутать, какую генерацию запускать дальше)
+    awaiting_split_goal = State()
+
 
 class ProfileStates(StatesGroup):
     """

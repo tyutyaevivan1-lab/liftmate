@@ -489,6 +489,37 @@ body {
 /* Экран 5: программа тренировки (teaser free/premium)                     */
 /* ---------------------------------------------------------------------- */
 
+/* Переключатель дней (только для многодневных программ — "Сплит на неделю";
+   однодневные "по цели"/"история" не показывают вкладки вовсе) */
+.program-day-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 14px;
+}
+
+.program-day-tab {
+  flex-shrink: 0;
+  padding: 9px 14px;
+  border: 1px solid var(--border-card);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-family: var(--font-family);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-duration) ease, color var(--transition-duration) ease, border-color var(--transition-duration) ease;
+}
+
+.program-day-tab--active {
+  background: var(--accent-lime-gradient);
+  border-color: transparent;
+  color: var(--accent-contrast-text);
+}
+
 .program-exercise-list {
   display: flex;
   flex-direction: column;
@@ -587,6 +618,31 @@ body {
 .program-create-button:active {
   transform: scale(0.98);
   filter: brightness(0.94);
+}
+
+/* Второстепенное действие рядом с "Экспортировать" — та же обводка, что у
+   "Добавить своё упражнение" на экране 2, чтобы не спорить с основной кнопкой */
+.program-shorten-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 10px;
+  padding: 13px 16px;
+  border: 1.5px dashed var(--accent-lime);
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--accent-lime);
+  font-family: var(--font-family);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition-duration) ease, transform 0.15s ease;
+}
+
+.program-shorten-button:active {
+  transform: scale(0.98);
+  background: color-mix(in srgb, var(--accent-lime) 12%, transparent);
 }
 
 .program-empty {

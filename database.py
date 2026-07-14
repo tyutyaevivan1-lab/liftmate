@@ -146,6 +146,12 @@ async def init_db() -> None:
         )
         """
     )
+    # days_per_week/chosen_split добавлены позже (сплит-программа на неделю, см.
+    # program.get_split_options) — ADD COLUMN IF NOT EXISTS на случай уже существующей
+    # таблицы без этих колонок. Оба нужны, только если пользователь хоть раз выбрал
+    # "Сплит на неделю" в /program — до этого момента остаются NULL.
+    await pool.execute("ALTER TABLE user_fitness_profile ADD COLUMN IF NOT EXISTS days_per_week INTEGER")
+    await pool.execute("ALTER TABLE user_fitness_profile ADD COLUMN IF NOT EXISTS chosen_split TEXT")
 
 
 async def get_last_workout(user_id: int, exercise_name: str) -> Optional[dict]:
@@ -542,19 +548,30 @@ async def save_fitness_profile(
     equipment_type: Optional[str],
     equipment_details: Optional[str],
     limitations: Optional[str],
+    days_per_week: Optional[int] = None,
+    chosen_split: Optional[str] = None,
 ) -> None:
-    """Сохраняет (или полностью перезаписывает — см. /update_profile) профиль пользователя."""
+    """
+    Сохраняет (или полностью перезаписывает — см. /update_profile) профиль пользователя.
+    days_per_week/chosen_split заполняются позже, лениво — при первом выборе "Сплит на
+    неделю" в /program (см. update_split_preference ниже) — поэтому по умолчанию None
+    и НЕ затираются, если вызывающий код их не передал: базовый мини-опрос (стаж/
+    оборудование/ограничения) ничего не знает о сплите и не должен его обнулять.
+    """
     pool = await get_pool()
     await pool.execute(
         """
         INSERT INTO user_fitness_profile
-            (user_id, experience_months, equipment_type, equipment_details, limitations, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6)
+            (user_id, experience_months, equipment_type, equipment_details, limitations,
+             days_per_week, chosen_split, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (user_id) DO UPDATE SET
             experience_months = excluded.experience_months,
             equipment_type = excluded.equipment_type,
             equipment_details = excluded.equipment_details,
             limitations = excluded.limitations,
+            days_per_week = COALESCE(excluded.days_per_week, user_fitness_profile.days_per_week),
+            chosen_split = COALESCE(excluded.chosen_split, user_fitness_profile.chosen_split),
             created_at = excluded.created_at
         """,
         user_id,
@@ -562,7 +579,29 @@ async def save_fitness_profile(
         equipment_type,
         equipment_details,
         limitations,
+        days_per_week,
+        chosen_split,
         datetime.now().isoformat(),
+    )
+
+
+async def update_split_preference(user_id: int, days_per_week: int, chosen_split: str) -> None:
+    """
+    Точечно обновляет только days_per_week/chosen_split — используется в flow "Сплит на
+    неделю" (см. handlers.py), где остальной профиль (стаж/оборудование/ограничения)
+    уже существует и трогать его не нужно. Профиль должен уже существовать (гарантируется
+    тем, что этот flow доступен только после базового мини-опроса).
+    """
+    pool = await get_pool()
+    await pool.execute(
+        """
+        UPDATE user_fitness_profile
+        SET days_per_week = $1, chosen_split = $2
+        WHERE user_id = $3
+        """,
+        days_per_week,
+        chosen_split,
+        user_id,
     )
 
 

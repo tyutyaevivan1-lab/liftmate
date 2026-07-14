@@ -13,6 +13,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from exercises_data import EXERCISE_CATEGORIES, get_category_name, get_exercise_display_name, pick_language
+from program import split_label
 from utils import pluralize_sets
 
 CATEGORY_CALLBACK_PREFIX = "cat"
@@ -25,6 +26,11 @@ PROGRAM_SOURCE_CALLBACK_PREFIX = "prog_src"
 PROGRAM_GOAL_CALLBACK_PREFIX = "prog_goal"
 EQUIPMENT_CALLBACK_PREFIX = "equip"
 LIMITATIONS_NONE_CALLBACK = "limitations_none"
+FREQUENCY_CALLBACK_PREFIX = "freq"
+SPLIT_CHOICE_CALLBACK_PREFIX = "split_choice"
+SPLIT_CONTINUE_LOCKED_CALLBACK = "split_continue_locked"
+SPLIT_LEARN_PREMIUM_CALLBACK = "split_learn_premium"
+SPLIT_GOAL_CALLBACK_PREFIX = "split_goal"
 
 _ADD_CUSTOM_LABEL = {"ru": "➕ Добавить своё упражнение", "en": "➕ Add your own exercise", "fr": "➕ Ajouter mon exercice"}
 _BACK_LABEL = {"ru": "⬅️ Назад к категориям", "en": "⬅️ Back to categories", "fr": "⬅️ Retour aux catégories"}
@@ -60,6 +66,11 @@ _PROGRAM_SOURCE_LABELS = {
         "ru": "📈 На основе моей истории тренировок",
         "en": "📈 Based on my workout history",
         "fr": "📈 Selon mon historique d'entraînement",
+    },
+    "split": {
+        "ru": "🗓 Сплит на неделю",
+        "en": "🗓 Weekly split",
+        "fr": "🗓 Split hebdomadaire",
     },
 }
 _ASK_PROGRAM_GOAL_TEXT = {
@@ -122,6 +133,60 @@ _PROFILE_SAVED_TEXT = {
     "ru": "Готово, профиль сохранён! Учту это при составлении программы 💪 (обновить можно в любой момент командой /update_profile)",
     "en": "Done, profile saved! I'll factor this in when building your program 💪 (update it anytime with /update_profile)",
     "fr": "C'est fait, profil enregistré ! J'en tiendrai compte pour ton programme 💪 (modifiable à tout moment avec /update_profile)",
+}
+
+# ---------------------------------------------------------------------------
+# "Сплит на неделю" — частота тренировок (лениво, при первом выборе этой ветки в
+# /program) и выбор/подтверждение сплита, см. states.ProgramStates, handlers.py,
+# program.get_split_options
+# ---------------------------------------------------------------------------
+
+_ASK_FREQUENCY_TEXT = {
+    "ru": "Сколько раз в неделю готов ходить в зал?",
+    "en": "How many times a week are you up for training?",
+    "fr": "Combien de fois par semaine peux-tu t'entraîner ?",
+}
+_FREQUENCY_LABELS = {
+    "1-2": {"ru": "1-2 раза", "en": "1-2 times", "fr": "1-2 fois"},
+    "3": {"ru": "3 раза", "en": "3 times", "fr": "3 fois"},
+    "4": {"ru": "4 раза", "en": "4 times", "fr": "4 fois"},
+    "5-6": {"ru": "5-6 раз", "en": "5-6 times", "fr": "5-6 fois"},
+}
+_ASK_SPLIT_CHOICE_TEXT = {
+    "ru": "На основе твоих ответов тебе доступно несколько вариантов сплита. Выбери:",
+    "en": "Based on your answers, a few split options are available. Pick one:",
+    "fr": "D'après tes réponses, plusieurs types de split sont possibles. Choisis :",
+}
+_SPLIT_LOCKED_INTRO_TEXT = {
+    "ru": "На основе твоих ответов тебе доступно несколько вариантов сплита:",
+    "en": "Based on your answers, a few split options would be available:",
+    "fr": "D'après tes réponses, plusieurs types de split seraient possibles :",
+}
+_SPLIT_LOCKED_OUTRO_TEXT = {
+    "ru": "Без premium — соберём {split} программу (тоже рабочий вариант).",
+    "en": "Without premium — we'll build a {split} program (still a solid option).",
+    "fr": "Sans premium — on te prépare un programme {split} (une option qui marche aussi).",
+}
+_SPLIT_CONTINUE_LOCKED_LABEL = {
+    "ru": "Продолжить с {split}",
+    "en": "Continue with {split}",
+    "fr": "Continuer avec {split}",
+}
+_SPLIT_LEARN_PREMIUM_LABEL = {"ru": "Узнать про Premium →", "en": "Learn about Premium →", "fr": "En savoir plus sur Premium →"}
+_SPLIT_PREMIUM_INFO_TEXT = {
+    "ru": "Premium пока не запущен, но скоро будет доступен — там появится реальный выбор сплита, сокращение программы и другие фишки. Пока продолжаем на бесплатном варианте:",
+    "en": "Premium isn't live yet, but it's coming soon — real split choice, shortening the program, and more. For now, let's continue on the free option:",
+    "fr": "Premium n'est pas encore disponible, mais ça arrive — vrai choix de split, réduction du programme, et plus. En attendant, on continue avec l'option gratuite :",
+}
+_ASK_SPLIT_GOAL_TEXT = {
+    "ru": "Какая цель на эту программу?",
+    "en": "What's the goal for this program?",
+    "fr": "Quel est l'objectif de ce programme ?",
+}
+_SPLIT_GOAL_LABELS = {
+    "build_muscle": {"ru": "💪 Набрать массу", "en": "💪 Build muscle", "fr": "💪 Prendre du muscle"},
+    "lose_weight": {"ru": "🔥 Похудеть", "en": "🔥 Lose weight", "fr": "🔥 Perdre du poids"},
+    "strength": {"ru": "🏋️ Сила", "en": "🏋️ Strength", "fr": "🏋️ Force"},
 }
 
 # Языковые кнопки: (код языка, подпись). Показывается ДО того, как язык известен,
@@ -388,16 +453,13 @@ def match_reply_button(text: str) -> Optional[str]:
 
 
 def build_program_source_keyboard(language: str) -> InlineKeyboardMarkup:
-    """Клавиатура выбора способа составления программы: "по цели" или "на основе истории"."""
+    """Клавиатура выбора способа составления программы: "по цели", "на основе истории" или "сплит на неделю"."""
     builder = InlineKeyboardBuilder()
-    builder.button(
-        text=_localized(_PROGRAM_SOURCE_LABELS["goal"], language),
-        callback_data=f"{PROGRAM_SOURCE_CALLBACK_PREFIX}:goal",
-    )
-    builder.button(
-        text=_localized(_PROGRAM_SOURCE_LABELS["history"], language),
-        callback_data=f"{PROGRAM_SOURCE_CALLBACK_PREFIX}:history",
-    )
+    for source_key in ("goal", "history", "split"):
+        builder.button(
+            text=_localized(_PROGRAM_SOURCE_LABELS[source_key], language),
+            callback_data=f"{PROGRAM_SOURCE_CALLBACK_PREFIX}:{source_key}",
+        )
     builder.adjust(1)
     return builder.as_markup()
 
@@ -491,6 +553,100 @@ def limitations_none_label(language: str) -> str:
 def profile_saved_text(language: str) -> str:
     """Подтверждение того, что профиль сохранён (конец мини-опроса /program или /update_profile)."""
     return _localized(_PROFILE_SAVED_TEXT, language)
+
+
+def ask_frequency_text(language: str) -> str:
+    """Вопрос про частоту тренировок в неделю — лениво, при первом выборе "Сплит на неделю"."""
+    return _localized(_ASK_FREQUENCY_TEXT, language)
+
+
+def build_frequency_keyboard(language: str) -> InlineKeyboardMarkup:
+    """Клавиатура выбора частоты: [1-2] [3] [4] [5-6], по 2 кнопки в ряд."""
+    builder = InlineKeyboardBuilder()
+    for freq_key in ("1-2", "3", "4", "5-6"):
+        builder.button(
+            text=_localized(_FREQUENCY_LABELS[freq_key], language),
+            callback_data=f"{FREQUENCY_CALLBACK_PREFIX}:{freq_key}",
+        )
+    builder.adjust(2, 2)
+    return builder.as_markup()
+
+
+def frequency_label(freq_key: str, language: str) -> str:
+    """Подпись выбранной частоты — для подтверждения выбора ("✅ ...")."""
+    return _localized(_FREQUENCY_LABELS[freq_key], language)
+
+
+def ask_split_choice_text(language: str) -> str:
+    """Вопрос выбора сплита — реальный выбор, показывается только premium (см. get_split_options)."""
+    return _localized(_ASK_SPLIT_CHOICE_TEXT, language)
+
+
+def build_split_choice_keyboard(options: list, language: str) -> InlineKeyboardMarkup:
+    """Реальный выбор сплита (только premium) — по кнопке на каждый вариант из options."""
+    builder = InlineKeyboardBuilder()
+    for split_key in options:
+        builder.button(
+            text=split_label(split_key, language),
+            callback_data=f"{SPLIT_CHOICE_CALLBACK_PREFIX}:{split_key}",
+        )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def split_locked_message(options: list, fixed_split: str, language: str) -> str:
+    """
+    Апселл-сообщение для free-пользователя: показывает, какие сплиты БЫЛИ БЫ доступны
+    (помечены 🔒), и что вместо них будет использован fixed_split (см. get_split_options).
+    """
+    lines = [_localized(_SPLIT_LOCKED_INTRO_TEXT, language), ""]
+    for split_key in options:
+        lines.append(f"🔒 {split_label(split_key, language)} — premium")
+    lines.append("")
+    lines.append(_localized(_SPLIT_LOCKED_OUTRO_TEXT, language, split=split_label(fixed_split, language)))
+    return "\n".join(lines)
+
+
+def build_split_locked_keyboard(fixed_split: str, language: str) -> InlineKeyboardMarkup:
+    """Кнопки под апселл-сообщением: "Продолжить с {фиксированный сплит}" / "Узнать про Premium"."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=_localized(_SPLIT_CONTINUE_LOCKED_LABEL, language, split=split_label(fixed_split, language)),
+        callback_data=SPLIT_CONTINUE_LOCKED_CALLBACK,
+    )
+    builder.button(
+        text=_localized(_SPLIT_LEARN_PREMIUM_LABEL, language),
+        callback_data=SPLIT_LEARN_PREMIUM_CALLBACK,
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def split_premium_info_text(language: str) -> str:
+    """Заглушка-объяснение при нажатии "Узнать про Premium" (реальный premium ещё не запущен)."""
+    return _localized(_SPLIT_PREMIUM_INFO_TEXT, language)
+
+
+def ask_split_goal_text(language: str) -> str:
+    """Вопрос цели именно в рамках сплит-флоу (после определения сплита)."""
+    return _localized(_ASK_SPLIT_GOAL_TEXT, language)
+
+
+def build_split_goal_keyboard(language: str) -> InlineKeyboardMarkup:
+    """Клавиатура выбора цели для сплит-программы: набрать массу / похудеть / сила."""
+    builder = InlineKeyboardBuilder()
+    for goal_key in _SPLIT_GOAL_LABELS:
+        builder.button(
+            text=_localized(_SPLIT_GOAL_LABELS[goal_key], language),
+            callback_data=f"{SPLIT_GOAL_CALLBACK_PREFIX}:{goal_key}",
+        )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def split_goal_label(goal_key: str, language: str) -> str:
+    """Подпись выбранной цели сплит-программы — для подтверждения выбора ("✅ ...")."""
+    return _localized(_SPLIT_GOAL_LABELS[goal_key], language)
 
 
 def format_last_result(row: dict, language: str) -> str:

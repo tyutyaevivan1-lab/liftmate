@@ -36,17 +36,25 @@ from database import (
     get_recent_workouts,
     get_user_language,
     get_user_rank,
+    get_user_stats,
     redact_database_url,
     save_fitness_profile,
     save_user_program,
     set_user_language,
+    update_split_preference,
     update_streak_on_workout,
     update_workout_by_id,
 )
 from exercises_data import find_exercise, get_canonical_exercise_name, get_exercise_display_name
 from leaderboard import build_leaderboard_message
 from fitness_profile import parse_experience_months
-from program import generate_workout_program
+from program import (
+    FREQUENCY_TO_DAYS_PER_WEEK,
+    generate_split_program,
+    generate_workout_program,
+    get_split_options,
+    split_label,
+)
 from states import ProfileStates, ProgramStates, WorkoutStates
 
 router = Router()
@@ -243,9 +251,16 @@ async def _finish_profile_survey(
     language: str,
     limitations: Optional[str],
 ) -> None:
-    """Сохраняет профиль и либо продолжает в обычный диалог /program, либо просто подтверждает сохранение."""
+    """
+    Сохраняет базовый профиль (стаж/оборудование/ограничения) и либо продолжает в обычный
+    диалог /program, либо (если это /update_profile и пользователь уже когда-то выбирал
+    сплит) переспрашивает частоту/сплит, либо просто подтверждает сохранение.
+    """
     data = await state.get_data()
     continue_to_program = data.get("continue_to_program", False)
+
+    existing_profile = await get_fitness_profile(user_id)
+    had_split_before = bool(existing_profile and existing_profile.get("days_per_week") is not None)
 
     await save_fitness_profile(
         user_id,
@@ -257,8 +272,12 @@ async def _finish_profile_survey(
     await state.clear()
 
     await message.answer(keyboards.profile_saved_text(language))
+
     if continue_to_program:
         await _ask_program_source(message, state, language)
+    elif had_split_before:
+        # /update_profile: сплит уже когда-то выбирался — предлагаем обновить и его тоже
+        await _start_split_flow(message, state, user_id, language, for_program=False, force_ask_frequency=True)
 
 
 @router.callback_query(F.data == keyboards.LIMITATIONS_NONE_CALLBACK)
@@ -295,9 +314,203 @@ async def _generate_and_send_program(
     language: str,
     goal: Optional[str] = None,
 ) -> None:
-    """Генерирует программу тренировки через GPT, отправляет её пользователю и сохраняет для /my_program и Web App."""
+    """
+    Генерирует программу тренировки (один день — "по цели"/"история") через GPT,
+    отправляет её пользователю и сохраняет для /my_program и Web App. Список упражнений
+    оборачивается в {"days": [...]} — тот же формат хранения, что и у многодневного
+    "Сплита на неделю" (см. _generate_and_send_split_program), с единственным днём без
+    названия (day_title=None) — так Web App работает с ОДНОЙ структурой независимо от
+    того, сколько дней в программе.
+    """
     result = await generate_workout_program(user_id, mode, language, goal=goal)
-    await save_user_program(user_id, result["text"], json.dumps(result["exercises"], ensure_ascii=False))
+    program_data = json.dumps({"days": [{"day_title": None, "exercises": result["exercises"]}]}, ensure_ascii=False)
+    await save_user_program(user_id, result["text"], program_data)
+    await message.answer(result["text"])
+
+
+# ---------------------------------------------------------------------------
+# "Сплит на неделю" — третий способ составления программы (см. handle_program_source_selected
+# ниже). Частота тренировок в неделю (fitness_profile.days_per_week) и сплит
+# (fitness_profile.chosen_split) спрашиваются лениво при первом выборе этой ветки и
+# сохраняются для будущих генераций; реальный выбор сплита (когда есть из чего выбирать)
+# доступен только premium — free видит варианты, но зафиксирован на первом (см.
+# program.get_split_options).
+# ---------------------------------------------------------------------------
+
+
+async def _start_split_flow(
+    message: Message,
+    state: FSMContext,
+    user_id: int,
+    language: str,
+    *,
+    for_program: bool,
+    force_ask_frequency: bool = False,
+) -> None:
+    """
+    Точка входа в сплит-флоу. for_program=True — обычный /program (после определения
+    сплита сразу спрашиваем цель и генерируем); for_program=False — вызвано из
+    /update_profile (после обновления сплита просто подтверждаем и останавливаемся).
+    force_ask_frequency=True заставляет переспросить частоту, даже если она уже
+    сохранена (используется именно в ветке /update_profile).
+    """
+    await state.update_data(split_for_program=for_program)
+
+    profile = await get_fitness_profile(user_id)
+    days_per_week = None if force_ask_frequency else (profile.get("days_per_week") if profile else None)
+
+    if days_per_week is None:
+        await state.set_state(ProgramStates.awaiting_frequency)
+        await message.answer(
+            keyboards.ask_frequency_text(language),
+            reply_markup=keyboards.build_frequency_keyboard(language),
+        )
+        return
+
+    await _resolve_split_choice(message, state, user_id, language, days_per_week)
+
+
+async def _resolve_split_choice(
+    message: Message,
+    state: FSMContext,
+    user_id: int,
+    language: str,
+    days_per_week: int,
+) -> None:
+    """
+    По частоте + стажу + premium-статусу определяет доступные варианты сплита
+    (см. program.get_split_options) и либо сразу фиксирует сплит (нет выбора), либо
+    показывает locked-апселл (free, но выбор в принципе есть), либо реальные кнопки
+    выбора (premium).
+    """
+    await state.update_data(pending_days_per_week=days_per_week)
+
+    profile = await get_fitness_profile(user_id)
+    experience_months = profile.get("experience_months") if profile else None
+    stats = await get_user_stats(user_id)
+    is_premium = bool(stats["is_premium"]) if stats else False
+
+    result = get_split_options(days_per_week, experience_months, is_premium)
+
+    if not result["choice_shown"]:
+        await update_split_preference(user_id, days_per_week, result["fixed"])
+        await _after_split_resolved(message, state, language)
+        return
+
+    if result["locked"]:
+        await state.update_data(pending_fixed_split=result["fixed"])
+        await message.answer(
+            keyboards.split_locked_message(result["options"], result["fixed"], language),
+            reply_markup=keyboards.build_split_locked_keyboard(result["fixed"], language),
+        )
+        return
+
+    # premium — реальный выбор из нескольких вариантов
+    await message.answer(
+        keyboards.ask_split_choice_text(language),
+        reply_markup=keyboards.build_split_choice_keyboard(result["options"], language),
+    )
+
+
+async def _after_split_resolved(message: Message, state: FSMContext, language: str) -> None:
+    """
+    После того как chosen_split определён и сохранён в профиле: если это был обычный
+    /program (split_for_program=True) — сразу спрашиваем цель и дальше генерируем;
+    если /update_profile (False) — просто подтверждаем и останавливаемся.
+    """
+    data = await state.get_data()
+    if data.get("split_for_program", True):
+        await state.set_state(ProgramStates.awaiting_split_goal)
+        await message.answer(
+            keyboards.ask_split_goal_text(language),
+            reply_markup=keyboards.build_split_goal_keyboard(language),
+        )
+        return
+
+    await state.clear()
+    await message.answer(keyboards.profile_saved_text(language))
+
+
+@router.callback_query(F.data.startswith(f"{keyboards.FREQUENCY_CALLBACK_PREFIX}:"))
+async def handle_frequency_selected(callback: CallbackQuery, state: FSMContext) -> None:
+    """Пользователь выбрал частоту тренировок в неделю — определяем доступные варианты сплита."""
+    freq_key = callback.data.split(":", 1)[1]
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+    days_per_week = FREQUENCY_TO_DAYS_PER_WEEK[freq_key]
+
+    await callback.message.edit_text(f"✅ {keyboards.frequency_label(freq_key, language)}")
+    await callback.answer()
+
+    await _resolve_split_choice(callback.message, state, user_id, language, days_per_week)
+
+
+@router.callback_query(F.data == keyboards.SPLIT_CONTINUE_LOCKED_CALLBACK)
+async def handle_split_continue_locked(callback: CallbackQuery, state: FSMContext) -> None:
+    """Free-пользователь нажал "Продолжить с {фиксированный сплит}" на апселл-сообщении."""
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+    data = await state.get_data()
+    fixed_split = data.get("pending_fixed_split")
+
+    await update_split_preference(user_id, data.get("pending_days_per_week"), fixed_split)
+
+    await callback.message.edit_text(f"✅ {split_label(fixed_split, language)}")
+    await callback.answer()
+    await _after_split_resolved(callback.message, state, language)
+
+
+@router.callback_query(F.data == keyboards.SPLIT_LEARN_PREMIUM_CALLBACK)
+async def handle_split_learn_premium(callback: CallbackQuery, state: FSMContext) -> None:
+    """Free-пользователь нажал "Узнать про Premium" — показываем заглушку и всё равно продолжаем на free."""
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+    data = await state.get_data()
+
+    await callback.answer()
+    await callback.message.answer(keyboards.split_premium_info_text(language))
+
+    await update_split_preference(user_id, data.get("pending_days_per_week"), data.get("pending_fixed_split"))
+    await _after_split_resolved(callback.message, state, language)
+
+
+@router.callback_query(F.data.startswith(f"{keyboards.SPLIT_CHOICE_CALLBACK_PREFIX}:"))
+async def handle_split_choice_selected(callback: CallbackQuery, state: FSMContext) -> None:
+    """Premium-пользователь выбрал конкретный сплит из реального списка вариантов."""
+    chosen_split = callback.data.split(":", 1)[1]
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+    data = await state.get_data()
+
+    await update_split_preference(user_id, data.get("pending_days_per_week"), chosen_split)
+
+    await callback.message.edit_text(f"✅ {split_label(chosen_split, language)}")
+    await callback.answer()
+    await _after_split_resolved(callback.message, state, language)
+
+
+@router.callback_query(F.data.startswith(f"{keyboards.SPLIT_GOAL_CALLBACK_PREFIX}:"))
+async def handle_split_goal_selected(callback: CallbackQuery, state: FSMContext) -> None:
+    """Цель для сплит-программы выбрана — генерируем и отправляем недельную программу."""
+    goal = callback.data.split(":", 1)[1]
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+
+    await callback.message.edit_text(f"✅ {keyboards.split_goal_label(goal, language)}")
+    await callback.answer()
+
+    await state.clear()
+    await _generate_and_send_split_program(callback.message, user_id, goal, language)
+
+
+async def _generate_and_send_split_program(message: Message, user_id: int, goal: str, language: str) -> None:
+    """Генерирует недельную программу по сохранённому в профиле сплиту, отправляет и сохраняет."""
+    profile = await get_fitness_profile(user_id)
+    chosen_split = (profile or {}).get("chosen_split") or "full_body"
+
+    result = await generate_split_program(user_id, chosen_split, goal, language)
+    program_data = json.dumps({"days": result["days"]}, ensure_ascii=False)
+    await save_user_program(user_id, result["text"], program_data)
     await message.answer(result["text"])
 
 
@@ -509,7 +722,7 @@ async def handle_add_custom_exercise(callback: CallbackQuery, state: FSMContext)
 
 @router.callback_query(F.data.startswith(f"{keyboards.PROGRAM_SOURCE_CALLBACK_PREFIX}:"))
 async def handle_program_source_selected(callback: CallbackQuery, state: FSMContext) -> None:
-    """Пользователь выбрал способ составления программы: "по цели" или "на основе истории"."""
+    """Пользователь выбрал способ составления программы: "по цели", "на основе истории" или "сплит на неделю"."""
     source = callback.data.split(":", 1)[1]
     user_id = callback.from_user.id
     language = await _get_language(user_id, callback.from_user)
@@ -522,6 +735,10 @@ async def handle_program_source_selected(callback: CallbackQuery, state: FSMCont
             keyboards.ask_program_goal_text(language),
             reply_markup=keyboards.build_program_goal_keyboard(language),
         )
+        return
+
+    if source == "split":
+        await _start_split_flow(callback.message, state, user_id, language, for_program=True)
         return
 
     # source == "history" — сразу генерируем и отправляем программу, доп. вопросов не нужно

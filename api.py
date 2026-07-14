@@ -62,7 +62,9 @@ from database import (
     get_user_stats,
     get_workout_history,
     init_db,
+    save_user_program,
 )
+from program import shorten_program_day
 
 # initData считается действительной не дольше суток — после этого Web App должен
 # быть переоткрыт заново (Telegram сам обновляет initData при каждом открытии)
@@ -88,7 +90,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET"],
+    # POST добавлен для /program/shorten (сокращение программы, premium) — раньше все
+    # эндпоинты были только на чтение (GET)
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -274,13 +278,24 @@ class ProgramExercise(BaseModel):
     why: str
 
 
+class ProgramDay(BaseModel):
+    # None для однодневных программ ("по цели"/"на основе истории") — им не нужно
+    # название дня, Web App просто не показывает переключатель дней, если он один
+    day_title: Optional[str] = None
+    exercises: list[ProgramExercise]
+
+
 class LatestProgramResponse(BaseModel):
     # None, если у пользователя ещё нет сохранённой программы (не вызывал /program),
     # либо она была сохранена до появления структурированных данных (program_data) —
     # в обоих случаях Web App показывает экран "Создать программу" (см. webapp/app.js)
-    exercises: Optional[list[ProgramExercise]] = None
+    days: Optional[list[ProgramDay]] = None
     created_at: Optional[str] = None
     is_premium: bool
+
+
+class ShortenProgramRequest(BaseModel):
+    target_exercise_count: int
 
 
 def _to_entry(row: dict) -> WorkoutEntry:
@@ -379,15 +394,56 @@ async def get_latest_program(
 
     if saved is None or not saved.get("program_data"):
         logger.info("program/latest: user_id=%s -> нет сохранённой программы, is_premium=%s", user_id, is_premium)
-        return LatestProgramResponse(exercises=None, created_at=None, is_premium=is_premium)
+        return LatestProgramResponse(days=None, created_at=None, is_premium=is_premium)
 
-    exercises_raw = json.loads(saved["program_data"])
+    days_raw = json.loads(saved["program_data"])["days"]
     logger.info(
-        "program/latest: user_id=%s -> %d упражнений, is_premium=%s",
-        user_id, len(exercises_raw), is_premium,
+        "program/latest: user_id=%s -> %d дней, is_premium=%s",
+        user_id, len(days_raw), is_premium,
     )
     return LatestProgramResponse(
-        exercises=[ProgramExercise(**item) for item in exercises_raw],
+        days=[ProgramDay(**day) for day in days_raw],
+        created_at=saved["created_at"].split("T")[0],
+        is_premium=is_premium,
+    )
+
+
+@app.post("/api/user/{user_id}/program/shorten", response_model=LatestProgramResponse)
+async def shorten_latest_program(
+    request: ShortenProgramRequest,
+    user_id: int = Path(..., description="Telegram user ID"),
+    telegram_user: dict = Depends(require_telegram_user),
+) -> LatestProgramResponse:
+    """
+    Premium-функция: сокращает КАЖДЫЙ день последней сохранённой программы до
+    request.target_exercise_count упражнений (чисто механически, без GPT — см.
+    program.shorten_program_day) и сохраняет результат как новую версию программы.
+    Проверка premium — на сервере, а не только скрытая кнопка на фронтенде (см.
+    webapp/app.js), иначе достаточно было бы открыть DevTools, чтобы обойти ограничение.
+    """
+    _ensure_matches_authenticated_user(user_id, telegram_user)
+
+    stats = await get_user_stats(user_id)
+    is_premium = bool(stats["is_premium"]) if stats else False
+    if not is_premium:
+        logger.warning("program/shorten: user_id=%s попытался сократить программу без premium", user_id)
+        raise HTTPException(status_code=403, detail="Сокращение программы доступно только premium-пользователям")
+
+    saved = await get_last_user_program(user_id)
+    if saved is None or not saved.get("program_data"):
+        raise HTTPException(status_code=404, detail="Нет сохранённой программы")
+
+    days_raw = json.loads(saved["program_data"])["days"]
+    shortened_days = [shorten_program_day(day, request.target_exercise_count) for day in days_raw]
+
+    await save_user_program(user_id, saved["program_text"], json.dumps({"days": shortened_days}, ensure_ascii=False))
+    logger.info(
+        "program/shorten: user_id=%s -> сокращено до %d упражнений на день",
+        user_id, request.target_exercise_count,
+    )
+
+    return LatestProgramResponse(
+        days=[ProgramDay(**day) for day in shortened_days],
         created_at=saved["created_at"].split("T")[0],
         is_premium=is_premium,
     )

@@ -35,7 +35,18 @@
       "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_profile_flow.py)",
       "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_program_with_profile.py)",
       "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_program_latest_endpoint.py)",
-      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile api.py database.py handlers.py keyboards.py program.py fitness_profile.py states.py main.py)"
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile api.py database.py handlers.py keyboards.py program.py fitness_profile.py states.py main.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile database.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile program.py database.py states.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -c \"import keyboards\")",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile keyboards.py program.py database.py states.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -m py_compile handlers.py database.py keyboards.py program.py states.py fitness_profile.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 -c \"import api\")",
+      "Bash(grep -n \"\\\\.program-unlock-button,\\\\|\\\\.program-export-button,\\\\|\\\\.program-create-button {\" /Users/tyutyaev_ivan/LiftMate/webapp/style.css)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_split_options.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_split_generation.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_split_handlers_flow.py)",
+      "Bash(/Users/tyutyaev_ivan/LiftMate/venv/bin/python3 /private/tmp/claude-501/-Users-tyutyaev-ivan-LiftMate/89c832d2-a5ff-4697-b51e-ddce7e89f95a/scratchpad/test_api_days_and_shorten.py)"
     ]
   }
 }
