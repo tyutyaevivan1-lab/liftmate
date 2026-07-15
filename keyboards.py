@@ -134,6 +134,11 @@ _PROFILE_SAVED_TEXT = {
     "en": "Done, profile saved! I'll factor this in when building your program 💪 (update it anytime with /update_profile)",
     "fr": "C'est fait, profil enregistré ! J'en tiendrai compte pour ton programme 💪 (modifiable à tout moment avec /update_profile)",
 }
+_SPLIT_FEATURE_HINT_TEXT = {
+    "ru": "Кстати, теперь можно собрать программу по сплиту (частота тренировок в неделю) — попробуй /program 💪",
+    "en": "By the way, you can now build a program based on a split (weekly training frequency) — try /program 💪",
+    "fr": "Au fait, tu peux maintenant construire un programme basé sur un split (fréquence d'entraînement hebdomadaire) — essaie /program 💪",
+}
 
 # ---------------------------------------------------------------------------
 # "Сплит на неделю" — частота тренировок (лениво, при первом выборе этой ветки в
@@ -553,6 +558,15 @@ def limitations_none_label(language: str) -> str:
 def profile_saved_text(language: str) -> str:
     """Подтверждение того, что профиль сохранён (конец мини-опроса /program или /update_profile)."""
     return _localized(_PROFILE_SAVED_TEXT, language)
+
+
+def split_feature_hint_text(language: str) -> str:
+    """
+    Подсказка про "Сплит на неделю" — добавляется к подтверждению /update_profile, только
+    пока пользователь ни разу не проходил через неё (days_per_week всё ещё NULL), см.
+    handlers._finish_profile_survey.
+    """
+    return _localized(_SPLIT_FEATURE_HINT_TEXT, language)
 
 
 def ask_frequency_text(language: str) -> str:

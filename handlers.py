@@ -272,7 +272,15 @@ async def _finish_profile_survey(
     )
     await state.clear()
 
-    await message.answer(keyboards.profile_saved_text(language))
+    profile_saved_message = keyboards.profile_saved_text(language)
+    if not continue_to_program and not had_split_before:
+        # /update_profile у пользователя, который ни разу не заходил в "Сплит на неделю"
+        # (в т.ч. legacy-профиль с days_per_week ещё NULL) — рассказываем о фиче разово.
+        # "Разово" здесь = показывается при КАЖДОМ /update_profile, пока days_per_week не
+        # заполнится через /program — как только пользователь пройдёт вопрос про частоту
+        # хотя бы раз, had_split_before станет True и подсказка больше не появится.
+        profile_saved_message += "\n\n" + keyboards.split_feature_hint_text(language)
+    await message.answer(profile_saved_message)
 
     if continue_to_program:
         await _ask_program_source(message, state, language)
