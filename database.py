@@ -217,6 +217,33 @@ async def init_db() -> None:
     await pool.execute("ALTER TABLE user_fitness_profile ADD COLUMN IF NOT EXISTS days_per_week INTEGER")
     await pool.execute("ALTER TABLE user_fitness_profile ADD COLUMN IF NOT EXISTS chosen_split TEXT")
 
+    # Библиотека упражнений с иллюстрациями техники (шаг 1 плана по гифкам/видео — см.
+    # scripts/import_exercise_library.py). Источник данных — free-exercise-db (Unlicense,
+    # public domain), НЕ ExerciseDB/exercisedb-api (тот датасет снят с GitHub по DMCA как
+    # неавторизованная копия коммерческих данных — импортировать его нельзя).
+    # ВАЖНО: в free-exercise-db картинки статичные (JPG), не анимированные — поле gif_url
+    # сейчас хранит URL статичного фото техники, а не гифку; переименовывать колонку не
+    # стали, чтобы не расходиться с заранее согласованной схемой, но это стоит учитывать
+    # при использовании (см. import-скрипт и комментарий там же).
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS exercise_library (
+            exercise_id TEXT PRIMARY KEY,
+            name_en TEXT NOT NULL,
+            name_ru TEXT,
+            name_fr TEXT,
+            body_part TEXT,
+            target_muscle TEXT,
+            secondary_muscles TEXT[],
+            equipment TEXT[],
+            gif_url TEXT,
+            video_url TEXT,
+            instructions TEXT[],
+            is_active BOOLEAN DEFAULT true
+        )
+        """
+    )
+
 
 async def get_last_workout(user_id: int, exercise_name: str) -> Optional[dict]:
     """
