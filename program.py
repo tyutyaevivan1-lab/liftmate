@@ -1077,9 +1077,16 @@ _PROGRAM_FALLBACK_INTRO_TEXT = {
 def _build_program_html(days: list, language: str) -> str:
     """
     Собирает HTML для Telegraph-страницы — только теги, которые Telegraph реально
-    поддерживает (h3/h4/p/strong/em/ul/li, без div/span/классов/инлайн-стилей). Названия
+    поддерживает (h3/h4/p/strong/em/ul/li/img, без div/span/классов/инлайн-стилей). Названия
     дней/упражнений уже локализованы GPT-ом (см. generate_split_program/
     generate_workout_program), здесь только статичные подписи (labels) переведены отдельно.
+
+    Картинка техники (gif_url из exercise_library, см. enrich_program_with_exercise_data)
+    вставляется СРАЗУ ПОСЛЕ заголовка упражнения — так читатель сначала видит название,
+    потом сразу картинку для узнавания движения, потом уже подходы/повторения. Если у
+    упражнения нет gif_url (например это упражнение из старого статичного fallback-шаблона
+    без exercise_id, см. _fallback_program/_fallback_split_day) — тег <img> просто
+    пропускается, остальная страница собирается как обычно.
     """
     lang = pick_language(language)
     parts = [f"<p><strong>{html.escape(_TELEGRAPH_SUBTITLE[lang])}</strong></p>"]
@@ -1098,6 +1105,9 @@ def _build_program_html(days: list, language: str) -> str:
             total_exercises += 1
             total_sets += exercise["sets"]
             parts.append(f"<h4>{html.escape(exercise['name'])}</h4>")
+            gif_url = exercise.get("gif_url")
+            if gif_url:
+                parts.append(f'<img src="{html.escape(gif_url)}"/>')
             parts.append(
                 "<ul>"
                 f"<li>{html.escape(_TELEGRAPH_SETS_LABEL[lang])}: {exercise['sets']}</li>"
