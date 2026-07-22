@@ -236,7 +236,13 @@ async def enrich_program_with_exercise_data(exercises: list, language: str) -> l
     """
     Дополняет каждое упражнение (после того, как GPT выбрал exercise_id — см.
     _parse_program_response/_parse_split_day_response) реальным названием
-    (name_ru/name_en/name_fr) и gif_url из exercise_library.
+    (name_ru/name_en/name_fr), gif_url и media_attribution из exercise_library.
+
+    media_attribution заполнен только для записей, где gif_url заменён на реальную
+    анимацию Gym visual (см. scripts/import_gymvisual_gifs.py) — их лицензия требует
+    показывать атрибуцию рядом с картинкой (см. program._build_program_html). Для
+    записей со старым статичным фото free-exercise-db (Unlicense) — NULL, атрибуция не
+    нужна.
 
     Если GPT всё же вернул exercise_id, которого нет в базе (галлюцинация вопреки
     списку candidates, который ему дали) — такое упражнение молча ОТБРАСЫВАЕТСЯ: лучше
@@ -251,7 +257,7 @@ async def enrich_program_with_exercise_data(exercises: list, language: str) -> l
     exercise_ids = [item["exercise_id"] for item in exercises]
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT exercise_id, name_en, name_ru, name_fr, gif_url FROM exercise_library WHERE exercise_id = ANY($1::text[])",
+        "SELECT exercise_id, name_en, name_ru, name_fr, gif_url, media_attribution FROM exercise_library WHERE exercise_id = ANY($1::text[])",
         exercise_ids,
     )
     lookup = {row["exercise_id"]: dict(row) for row in rows}
@@ -270,6 +276,7 @@ async def enrich_program_with_exercise_data(exercises: list, language: str) -> l
                 "exercise_id": item["exercise_id"],
                 "name": name,
                 "gif_url": row["gif_url"],
+                "media_attribution": row["media_attribution"],
                 "sets": item["sets"],
                 "reps": item["reps"],
                 "why": item["why"],
@@ -1107,7 +1114,18 @@ def _build_program_html(days: list, language: str) -> str:
             parts.append(f"<h4>{html.escape(exercise['name'])}</h4>")
             gif_url = exercise.get("gif_url")
             if gif_url:
-                parts.append(f'<img src="{html.escape(gif_url)}"/>')
+                attribution = exercise.get("media_attribution")
+                if attribution:
+                    # Лицензия медиа (Gym visual, см. scripts/import_gymvisual_gifs.py и
+                    # database.py: exercise_library.media_attribution) требует атрибуцию
+                    # рядом с картинкой при любом использовании — figure/figcaption
+                    # поддерживаются Telegraph (см. ALLOWED_TAGS в telegraph/utils.py).
+                    parts.append(
+                        f'<figure><img src="{html.escape(gif_url)}"/>'
+                        f"<figcaption>{html.escape(attribution)}</figcaption></figure>"
+                    )
+                else:
+                    parts.append(f'<img src="{html.escape(gif_url)}"/>')
             parts.append(
                 "<ul>"
                 f"<li>{html.escape(_TELEGRAPH_SETS_LABEL[lang])}: {exercise['sets']}</li>"

@@ -243,6 +243,14 @@ async def init_db() -> None:
         )
         """
     )
+    # media_attribution добавлен позже (см. scripts/import_gymvisual_gifs.py) — для строк,
+    # у которых gif_url заменён на реальную анимацию из hasaneyldrm/exercises-dataset (медиа
+    # © Gym visual, используется с разрешения правообладателя, полученного напрямую для этого
+    # проекта). NOTICE.md этого датасета требует сохранять атрибуцию при любом использовании
+    # медиа — поэтому она хранится отдельным полем и выводится рядом с картинкой (см.
+    # program._build_program_html). Для строк со старым фото из free-exercise-db (Unlicense)
+    # остаётся NULL — там атрибуция не требуется.
+    await pool.execute("ALTER TABLE exercise_library ADD COLUMN IF NOT EXISTS media_attribution TEXT")
 
 
 async def get_last_workout(user_id: int, exercise_name: str) -> Optional[dict]:
