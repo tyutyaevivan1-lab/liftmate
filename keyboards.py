@@ -210,6 +210,59 @@ _CHOOSE_LANGUAGE_TEXT = (
     "🇫🇷 Choisis la langue de l'interface :"
 )
 
+# Минимальное приветствие ДО выбора языка (см. cmd_start) — тоже на всех трёх языках сразу,
+# т.к. язык пользователя ещё не известен. Пересобранный онбординг (см. handlers.py):
+# приветствие -> выбор языка -> мини-опрос профиля -> переход в Web App -> объяснение
+# трекинга при первом сообщении после онбординга. Ничего про кнопки постоянного меню или
+# "ещё один подход" здесь намеренно не объясняется — кнопки видны физически без слов.
+_PRE_LANGUAGE_GREETING_TEXT = (
+    "🇷🇺 Привет! Я LiftMate 💪 — отслеживаю твои тренировки и слежу за прогрессом.\n"
+    "🇬🇧 Hi! I'm LiftMate 💪 — I track your workouts and keep an eye on your progress.\n"
+    "🇫🇷 Salut ! Je suis LiftMate 💪 — je suis tes entraînements et ta progression."
+)
+
+# То же приветствие, но на одном языке — для повторных /start ПОСЛЕ того, как язык уже
+# выбран (и для новых, и для уже онбордившихся пользователей, см. cmd_start).
+_MINIMAL_WELCOME_TEXT = {
+    "ru": "Привет! Я LiftMate 💪 — отслеживаю твои тренировки и слежу за прогрессом.",
+    "en": "Hi! I'm LiftMate 💪 — I track your workouts and keep an eye on your progress.",
+    "fr": "Salut ! Je suis LiftMate 💪 — je suis tes entraînements et ta progression.",
+}
+
+# Интро мини-опроса профиля специально для онбординга (сразу после выбора языка) — без
+# призыва в духе "погнали" и без предположения, что пользователь прямо сейчас в зале.
+# Объединяет вводную фразу и первый вопрос опроса в одно сообщение (тот же вопрос, что и
+# в _ASK_EXPERIENCE_TEXT, но без рамки "чтобы программа была под тебя" — на этом этапе речь
+# ещё не о конкретной программе тренировок).
+_ONBOARDING_PROFILE_INTRO_TEXT = {
+    "ru": "Для начала — пара вопросов о тебе, чтобы всё было по делу (займёт минуту):\n\nСколько месяцев/лет ты уже ходишь в зал?",
+    "en": "First — a couple of questions about you, so things stay relevant (takes a minute):\n\nHow many months/years have you been training?",
+    "fr": "D'abord — quelques questions sur toi, pour que ce soit pertinent (ça prend une minute) :\n\nDepuis combien de mois/années t'entraînes-tu ?",
+}
+
+# Показывается сразу после сохранения профиля, если опрос запущен из онбординга (а не из
+# /program или /update_profile) — переход в Web App вместо продолжения диалога программы.
+_ONBOARDING_WEBAPP_CTA_TEXT = {
+    "ru": "Готово! Загляни в приложение — там профиль и первые шаги.",
+    "en": "All set! Check out the app — your profile and first steps are there.",
+    "fr": "C'est fait ! Jette un œil à l'application — ton profil et tes premiers pas y sont.",
+}
+
+_OPEN_WEBAPP_ONBOARDING_LABEL = {
+    "ru": "📱 Открыть приложение",
+    "en": "📱 Open the app",
+    "fr": "📱 Ouvrir l'application",
+}
+
+# Одноразовое объяснение, как трекать тренировки текстом — раньше жило в общем приветствии,
+# теперь показывается перед разбором ПЕРВОГО сообщения после онбординга (см.
+# handlers._process_new_message, database.has_seen_tracking_intro/mark_tracking_intro_shown).
+_TRACKING_INTRO_TEXT = {
+    "ru": "Когда будешь в зале — просто напиши мне, что сделал(а): «жим 80 на 8». Я запомню и в следующий раз подскажу, что улучшить.",
+    "en": "When you're at the gym — just tell me what you did: \"bench 80 for 8\". I'll remember it and suggest improvements next time.",
+    "fr": "Quand tu seras à la salle — dis-moi simplement ce que tu as fait : « développé 80 pour 8 ». Je m'en souviendrai et te donnerai des conseils la prochaine fois.",
+}
+
 _LANGUAGE_CONFIRMED_TEXT = {
     "ru": "✅ Готово, теперь буду общаться на русском! Сменить язык можно в любой момент командой /language.",
     "en": "✅ Done, I'll speak English from now on! You can change the language anytime with /language.",
@@ -274,48 +327,6 @@ ALL_REPLY_BUTTON_TEXTS = frozenset(
     label for labels in _REPLY_BUTTON_LABELS.values() for label in labels.values()
 )
 
-_WELCOME_TEXT = {
-    "ru": (
-        "Я LiftMate — бот для трекинга твоих тренировок в зале. 💪\n\n"
-        "Можешь писать мне о выполненном подходе в свободной форме, например:\n"
-        "«жим лежа 80кг на 8 раз, 3 подхода»\n"
-        "«сделал присед 100 на 5»\n\n"
-        "А можешь вообще не запоминать команды — теперь внизу экрана есть постоянные "
-        "кнопки: 📋 Упражнения, 🏆 Лидерборд и 🌐 Язык. Плюс синяя "
-        "кнопка меню слева от поля ввода тоже открывает полноценный интерфейс с "
-        "упражнениями прямо внутри Telegram.\n\n"
-        "Если забудешь указать вес, повторения или количество подходов — я переспрошу. "
-        "А если просто допишешь что-то вроде «ещё один подход» — пойму, что речь про "
-        "последнее упражнение, и обновлю запись.\n\n"
-        "Сменить язык интерфейса можно в любой момент командой /language или кнопкой 🌐. Погнали!"
-    ),
-    "en": (
-        "I'm LiftMate — your gym workout tracker bot. 💪\n\n"
-        "You can just tell me about a set in your own words, like:\n"
-        "\"bench press 80kg for 8 reps, 3 sets\"\n"
-        "\"did squats, 100 for 5\"\n\n"
-        "Or don't bother remembering commands at all — there are permanent buttons at the "
-        "bottom of the screen now: 📋 Exercises, 🏆 Leaderboard, and 🌐 Language. "
-        "Plus the blue menu button to the left of the text field also opens the full exercise "
-        "picker right inside Telegram.\n\n"
-        "If you forget the weight, reps, or sets — I'll ask. And if you just add something like "
-        "\"one more set\" — I'll know you mean the last exercise and update it.\n\n"
-        "You can change the interface language anytime with /language or the 🌐 button. Let's go!"
-    ),
-    "fr": (
-        "Je suis LiftMate — ton bot de suivi d'entraînement. 💪\n\n"
-        "Tu peux me décrire ta série librement, par exemple :\n"
-        "« développé couché 80kg pour 8 répétitions, 3 séries »\n"
-        "« squat 100 pour 5 »\n\n"
-        "Pas besoin de retenir les commandes — il y a maintenant des boutons permanents en "
-        "bas de l'écran : 📋 Exercices, 🏆 Classement, et 🌐 Langue. Le "
-        "bouton menu bleu à gauche du champ de texte ouvre aussi l'interface complète des "
-        "exercices dans Telegram.\n\n"
-        "Si tu oublies le poids, les répétitions ou les séries, je te les demanderai. Et si tu "
-        "ajoutes juste « encore une série », je comprendrai que ça concerne le dernier exercice.\n\n"
-        "Tu peux changer la langue à tout moment avec /language ou le bouton 🌐. Allons-y !"
-    ),
-}
 
 
 def _localized(mapping: dict, language: str, **kwargs) -> str:
@@ -409,14 +420,44 @@ def choose_language_text() -> str:
     return _CHOOSE_LANGUAGE_TEXT
 
 
+def pre_language_greeting_text() -> str:
+    """Минимальное приветствие ДО выбора языка — на всех трёх языках сразу (см. cmd_start)."""
+    return _PRE_LANGUAGE_GREETING_TEXT
+
+
 def language_confirmed_text(language: str) -> str:
     """Подтверждение того, что язык интерфейса сохранён."""
     return _localized(_LANGUAGE_CONFIRMED_TEXT, language)
 
 
-def welcome_text(language: str) -> str:
-    """Приветственный текст /start на выбранном языке пользователя."""
-    return _localized(_WELCOME_TEXT, language)
+def minimal_welcome_text(language: str) -> str:
+    """Минимальное приветствие /start на выбранном языке — и для новых, и для уже онбордившихся пользователей."""
+    return _localized(_MINIMAL_WELCOME_TEXT, language)
+
+
+def onboarding_profile_intro_text(language: str) -> str:
+    """Вводная фраза + первый вопрос мини-опроса профиля, специально для онбординга (см. cmd_start)."""
+    return _localized(_ONBOARDING_PROFILE_INTRO_TEXT, language)
+
+
+def onboarding_webapp_cta_text(language: str) -> str:
+    """Текст перехода в Web App сразу после мини-опроса профиля в рамках онбординга."""
+    return _localized(_ONBOARDING_WEBAPP_CTA_TEXT, language)
+
+
+def build_onboarding_webapp_keyboard(language: str, webapp_url: str) -> InlineKeyboardMarkup:
+    """Клавиатура с единственной кнопкой, открывающей Web App — для перехода в конце онбординга."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=_localized(_OPEN_WEBAPP_ONBOARDING_LABEL, language),
+        web_app=WebAppInfo(url=webapp_url),
+    )
+    return builder.as_markup()
+
+
+def tracking_intro_text(language: str) -> str:
+    """Одноразовое объяснение, как трекать тренировки текстом (см. _process_new_message)."""
+    return _localized(_TRACKING_INTRO_TEXT, language)
 
 
 def keyboard_hint_text(language: str) -> str:

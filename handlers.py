@@ -37,6 +37,8 @@ from database import (
     get_user_language,
     get_user_rank,
     get_user_stats,
+    has_seen_tracking_intro,
+    mark_tracking_intro_shown,
     redact_database_url,
     save_fitness_profile,
     save_user_program,
@@ -80,9 +82,12 @@ async def _get_language(user_id: int, telegram_user) -> str:
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
     """
-    Обработчик команды /start. Если язык интерфейса ещё не выбран — сначала просим выбрать
-    язык, а обычное приветствие показываем сразу после выбора. Если язык уже известен —
-    сразу показываем приветствие на этом языке.
+    Обработчик команды /start. Если язык интерфейса ещё не выбран — сначала минимальное
+    приветствие (на всех трёх языках сразу, т.к. язык ещё не известен), затем выбор языка;
+    мини-опрос профиля и переход в Web App запускаются дальше по цепочке, см.
+    handle_language_selected/_finish_profile_survey. Если язык уже известен (в т.ч. у
+    пользователей, которые уже прошли онбординг раньше) — просто показываем то же
+    минимальное приветствие на этом языке, без повторного опроса.
     """
     await state.clear()
     user_id = message.from_user.id
@@ -90,6 +95,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
     if language is None:
         await state.update_data(show_welcome_after_language=True)
+        await message.answer(keyboards.pre_language_greeting_text())
         await message.answer(
             keyboards.choose_language_text(),
             reply_markup=keyboards.build_language_keyboard(),
@@ -97,7 +103,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         return
 
     await message.answer(
-        keyboards.welcome_text(language),
+        keyboards.minimal_welcome_text(language),
         reply_markup=keyboards.build_main_reply_keyboard(language),
     )
 
@@ -127,10 +133,16 @@ async def handle_language_selected(callback: CallbackQuery, state: FSMContext) -
     # не позволяет прикрепить ReplyKeyboardMarkup через edit_text, только через новое sendMessage
     data = await state.get_data()
     if data.get("show_welcome_after_language"):
-        # Язык выбирался в рамках самого первого /start — сразу показываем приветствие
+        # Язык выбирался в рамках самого первого /start — сразу переходим к мини-опросу
+        # профиля (см. _start_profile_survey), а не к обычному приветствию. Постоянная
+        # клавиатура прикрепляется здесь же, к сообщению с первым вопросом опроса.
         await state.clear()
-        await callback.message.answer(
-            keyboards.welcome_text(language),
+        await _start_profile_survey(
+            callback.message,
+            state,
+            continue_to_program=False,
+            language=language,
+            is_onboarding=True,
             reply_markup=keyboards.build_main_reply_keyboard(language),
         )
     else:
@@ -180,16 +192,30 @@ async def _ask_program_source(message: Message, state: FSMContext, language: str
     )
 
 
-async def _start_profile_survey(message: Message, state: FSMContext, *, continue_to_program: bool, language: str) -> None:
+async def _start_profile_survey(
+    message: Message,
+    state: FSMContext,
+    *,
+    continue_to_program: bool,
+    language: str,
+    is_onboarding: bool = False,
+    reply_markup=None,
+) -> None:
     """
-    Запускает мини-опрос профиля (опыт/оборудование/ограничения) — используется и при
-    первом заходе в /program (профиля ещё нет), и по явному /update_profile.
-    continue_to_program сохраняется в FSM-данных и решает, что делать по окончании опроса:
-    сразу перейти к обычному диалогу /program, либо просто подтвердить сохранение профиля.
+    Запускает мини-опрос профиля (опыт/оборудование/ограничения) — используется при первом
+    заходе в /program (профиля ещё нет), по явному /update_profile, и сразу после выбора
+    языка в самом первом /start (см. handle_language_selected).
+    continue_to_program и is_onboarding сохраняются в FSM-данных и решают, что делать по
+    окончании опроса (см. _finish_profile_survey): продолжить обычный диалог /program,
+    перейти в Web App (онбординг), либо просто подтвердить сохранение профиля.
+    is_onboarding переключает и вступительный текст первого вопроса — без рамки "чтобы
+    программа была под тебя" и без призыва в духе "погнали", т.к. на этом этапе речь ещё
+    не о конкретной программе тренировок.
     """
     await state.set_state(ProfileStates.waiting_for_experience)
-    await state.update_data(continue_to_program=continue_to_program)
-    await message.answer(keyboards.ask_experience_text(language))
+    await state.update_data(continue_to_program=continue_to_program, is_onboarding=is_onboarding)
+    text = keyboards.onboarding_profile_intro_text(language) if is_onboarding else keyboards.ask_experience_text(language)
+    await message.answer(text, reply_markup=reply_markup)
 
 
 @router.message(Command("program"))
@@ -253,12 +279,14 @@ async def _finish_profile_survey(
     limitations: Optional[str],
 ) -> None:
     """
-    Сохраняет базовый профиль (стаж/оборудование/ограничения) и либо продолжает в обычный
-    диалог /program, либо (если это /update_profile и пользователь уже когда-то выбирал
-    сплит) переспрашивает частоту/сплит, либо просто подтверждает сохранение.
+    Сохраняет базовый профиль (стаж/оборудование/ограничения) и либо переходит в Web App
+    (онбординг, см. is_onboarding), либо продолжает в обычный диалог /program, либо (если
+    это /update_profile и пользователь уже когда-то выбирал сплит) переспрашивает
+    частоту/сплит, либо просто подтверждает сохранение.
     """
     data = await state.get_data()
     continue_to_program = data.get("continue_to_program", False)
+    is_onboarding = data.get("is_onboarding", False)
 
     existing_profile = await get_fitness_profile(user_id)
     had_split_before = bool(existing_profile and existing_profile.get("days_per_week") is not None)
@@ -271,6 +299,17 @@ async def _finish_profile_survey(
         limitations,
     )
     await state.clear()
+
+    if is_onboarding:
+        # Онбординг: вместо подтверждения сохранения профиля и обычного диалога /program —
+        # переход в Web App (см. handlers.py-модуль docstring про новую последовательность
+        # онбординга). Объяснение трекинга текстом — отдельно, при первом сообщении после
+        # этого момента (см. _process_new_message).
+        await message.answer(
+            keyboards.onboarding_webapp_cta_text(language),
+            reply_markup=keyboards.build_onboarding_webapp_keyboard(language, WEBAPP_URL),
+        )
+        return
 
     profile_saved_message = keyboards.profile_saved_text(language)
     if not continue_to_program and not had_split_before:
@@ -893,7 +932,16 @@ async def _process_new_message(message: Message, user_id: int, state: FSMContext
     что-то неоднозначное, или сообщение вообще не о тренировке. Извлечение данных
     (упражнение/вес/повторения/подходы) работает независимо от языка текста — но отвечает
     бот всегда на языке из user_settings, переданном в параметре language.
+
+    Перед самим разбором — одноразовая проверка: если это первое сообщение пользователя
+    после онбординга (объяснение трекинга текстом ещё не показывалось, см.
+    database.has_seen_tracking_intro), сначала показываем его, а затем всё равно разбираем
+    само сообщение как обычно — не проглатываем его.
     """
+    if not await has_seen_tracking_intro(user_id):
+        await mark_tracking_intro_shown(user_id)
+        await message.answer(keyboards.tracking_intro_text(language))
+
     # Контекст для GPT: последние реплики переписки + последняя сохранённая запись
     context = history.get_history(user_id)
     last_saved = await get_last_workout_for_user(user_id)

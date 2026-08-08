@@ -161,6 +161,12 @@ async def init_db() -> None:
         )
         """
     )
+    # tracking_intro_shown добавлен позже (пересборка онбординга) — гейтит одноразовое
+    # объяснение "как трекать тренировки текстом", которое теперь показывается не в общем
+    # приветствии, а перед первым разбором любого сообщения ПОСЛЕ онбординга (см.
+    # handlers._process_new_message). ADD COLUMN IF NOT EXISTS на случай уже существующей
+    # таблицы у текущих пользователей.
+    await pool.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS tracking_intro_shown BOOLEAN NOT NULL DEFAULT false")
     # Статистика для лидербордов. current_streak/longest_streak/last_workout_date
     # обслуживают ЭТАП 1 (бесплатный глобальный лидерборд по сериям); is_premium
     # уже здесь для будущих platных лидербордов (по весу/% прогресса) — достаточно
@@ -488,6 +494,28 @@ async def set_user_language(user_id: int, language: str) -> None:
         user_id,
         language,
     )
+
+
+async def has_seen_tracking_intro(user_id: int) -> bool:
+    """
+    Показывалось ли уже одноразовое объяснение "как трекать текстом" (см.
+    handlers._process_new_message). Если строки в user_settings ещё нет вообще (пользователь
+    написал боту, ни разу не пройдя /start) — считаем, что ещё не показывалось.
+    """
+    pool = await get_pool()
+    value = await pool.fetchval("SELECT tracking_intro_shown FROM user_settings WHERE user_id = $1", user_id)
+    return bool(value)
+
+
+@_with_db_retry()
+async def mark_tracking_intro_shown(user_id: int) -> None:
+    """
+    Отмечает, что объяснение трекинга уже показано — чтобы не повторять его при каждом
+    следующем сообщении. Строка в user_settings к этому моменту уже существует (язык
+    выбирается раньше в том же онбординге), поэтому здесь достаточно UPDATE.
+    """
+    pool = await get_pool()
+    await pool.execute("UPDATE user_settings SET tracking_intro_shown = true WHERE user_id = $1", user_id)
 
 
 async def get_user_stats(user_id: int) -> Optional[dict]:
