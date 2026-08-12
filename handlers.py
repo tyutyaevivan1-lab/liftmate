@@ -85,9 +85,14 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     Обработчик команды /start. Если язык интерфейса ещё не выбран — сначала минимальное
     приветствие (на всех трёх языках сразу, т.к. язык ещё не известен), затем выбор языка;
     мини-опрос профиля и переход в Web App запускаются дальше по цепочке, см.
-    handle_language_selected/_finish_profile_survey. Если язык уже известен (в т.ч. у
-    пользователей, которые уже прошли онбординг раньше) — просто показываем то же
-    минимальное приветствие на этом языке, без повторного опроса.
+    handle_language_selected/_finish_profile_survey. Если язык уже известен — это ВСЕГДА
+    повторный /start (первоначальный выбор языка ведёт в handle_language_selected, а не
+    сюда), поэтому показываем минимальное приветствие плюс короткую подсказку "продолжай
+    как обычно" с кнопкой "Обновить профиль" — без повторного опроса и без старого большого
+    welcome_text. Постоянная клавиатура здесь не переприкрепляется (Telegram не позволяет
+    и ReplyKeyboardMarkup, и InlineKeyboardMarkup на одном сообщении) — она уже установлена
+    раньше, в момент онбординга (см. handle_language_selected), единственный путь попасть
+    в это состояние ("язык уже известен").
     """
     await state.clear()
     user_id = message.from_user.id
@@ -103,8 +108,8 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         return
 
     await message.answer(
-        keyboards.minimal_welcome_text(language),
-        reply_markup=keyboards.build_main_reply_keyboard(language),
+        keyboards.minimal_welcome_text(language) + "\n\n" + keyboards.returning_user_hint_text(language),
+        reply_markup=keyboards.build_returning_user_keyboard(language),
     )
 
 
@@ -245,6 +250,22 @@ async def cmd_update_profile(message: Message, state: FSMContext) -> None:
     language = await _get_language(user_id, message.from_user)
 
     await _start_profile_survey(message, state, continue_to_program=False, language=language)
+
+
+@router.callback_query(F.data == keyboards.UPDATE_PROFILE_CTA_CALLBACK)
+async def handle_update_profile_cta(callback: CallbackQuery, state: FSMContext) -> None:
+    """
+    Кнопка "Обновить профиль" на сообщении повторного /start (см. cmd_start) — запускает
+    тот же мини-опрос профиля, что и команда /update_profile (переиспользует
+    _start_profile_survey напрямую, без дублирования логики).
+    """
+    await state.clear()
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+
+    await callback.message.edit_text(f"✅ {keyboards.update_profile_cta_label(language)}")
+    await callback.answer()
+    await _start_profile_survey(callback.message, state, continue_to_program=False, language=language)
 
 
 @router.callback_query(F.data.startswith(f"{keyboards.EQUIPMENT_CALLBACK_PREFIX}:"))

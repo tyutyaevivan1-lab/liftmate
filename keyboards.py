@@ -31,6 +31,7 @@ SPLIT_CHOICE_CALLBACK_PREFIX = "split_choice"
 SPLIT_CONTINUE_LOCKED_CALLBACK = "split_continue_locked"
 SPLIT_LEARN_PREMIUM_CALLBACK = "split_learn_premium"
 SPLIT_GOAL_CALLBACK_PREFIX = "split_goal"
+UPDATE_PROFILE_CTA_CALLBACK = "update_profile_cta"
 
 _ADD_CUSTOM_LABEL = {"ru": "➕ Добавить своё упражнение", "en": "➕ Add your own exercise", "fr": "➕ Ajouter mon exercice"}
 _BACK_LABEL = {"ru": "⬅️ Назад к категориям", "en": "⬅️ Back to categories", "fr": "⬅️ Retour aux catégories"}
@@ -227,6 +228,25 @@ _MINIMAL_WELCOME_TEXT = {
     "ru": "Привет! Я LiftMate 💪 — отслеживаю твои тренировки и слежу за прогрессом.",
     "en": "Hi! I'm LiftMate 💪 — I track your workouts and keep an eye on your progress.",
     "fr": "Salut ! Je suis LiftMate 💪 — je suis tes entraînements et ta progression.",
+}
+
+# Повторный /start (язык уже сохранён, т.е. онбординг когда-то уже пройден) — короткая
+# подсказка "продолжай как обычно" вместо старого большого welcome_text, который раньше
+# перечислял кнопки/фичи текстом. Показывается ТОЛЬКО в этой ветке cmd_start — на самом
+# онбординге (когда язык ещё выбирается впервые) не участвует.
+_RETURNING_USER_HINT_TEXT = {
+    "ru": "Кнопки внизу под рукой — можешь продолжать трекать тренировки как обычно, просто опиши подход текстом.",
+    "en": "The buttons below are right there — keep tracking as usual, just describe your set in a message.",
+    "fr": "Les boutons ci-dessous sont à portée de main — continue à suivre tes séances comme d'habitude, décris simplement ta série.",
+}
+
+# Кнопка "Обновить профиль" на сообщении повторного /start (см. UPDATE_PROFILE_CTA_CALLBACK) —
+# ведёт в тот же мини-опрос профиля, что и команда /update_profile (см.
+# handlers.handle_update_profile_cta, переиспользует _start_profile_survey напрямую).
+_UPDATE_PROFILE_CTA_LABEL = {
+    "ru": "🔄 Обновить профиль",
+    "en": "🔄 Update profile",
+    "fr": "🔄 Mettre à jour le profil",
 }
 
 # Интро мини-опроса профиля специально для онбординга (сразу после выбора языка) — без
@@ -433,6 +453,23 @@ def language_confirmed_text(language: str) -> str:
 def minimal_welcome_text(language: str) -> str:
     """Минимальное приветствие /start на выбранном языке — и для новых, и для уже онбордившихся пользователей."""
     return _localized(_MINIMAL_WELCOME_TEXT, language)
+
+
+def returning_user_hint_text(language: str) -> str:
+    """Короткая подсказка "продолжай как обычно" для повторного /start (язык уже сохранён)."""
+    return _localized(_RETURNING_USER_HINT_TEXT, language)
+
+
+def build_returning_user_keyboard(language: str) -> InlineKeyboardMarkup:
+    """Клавиатура с единственной кнопкой "Обновить профиль" для сообщения повторного /start."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_localized(_UPDATE_PROFILE_CTA_LABEL, language), callback_data=UPDATE_PROFILE_CTA_CALLBACK)
+    return builder.as_markup()
+
+
+def update_profile_cta_label(language: str) -> str:
+    """Подпись кнопки "Обновить профиль" — для подтверждения нажатия ("✅ ...")."""
+    return _localized(_UPDATE_PROFILE_CTA_LABEL, language)
 
 
 def onboarding_profile_intro_text(language: str) -> str:
