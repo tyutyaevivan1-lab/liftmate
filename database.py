@@ -223,6 +223,25 @@ async def init_db() -> None:
     await pool.execute("ALTER TABLE user_fitness_profile ADD COLUMN IF NOT EXISTS days_per_week INTEGER")
     await pool.execute("ALTER TABLE user_fitness_profile ADD COLUMN IF NOT EXISTS chosen_split TEXT")
 
+    # Личное расписание для системы "целевого" streak (см. streak_goals.py) — НЕ то же
+    # самое, что days_per_week/chosen_split выше (те про генерацию программы по сплиту).
+    # target_weekdays — конкретные дни недели ISO (1=пн..7=вс), которые пользователь
+    # выбрал как свои тренировочные дни, например {1,3,5} для пн/ср/пт. schedule_set_at —
+    # точка отсчёта для расчёта streak: при смене расписания старый streak, посчитанный
+    # под старое расписание, не имеет смысла для нового, поэтому отсчёт начинается заново.
+    # Сам current_streak/longest_streak НЕ хранится отдельным счётчиком — считается заново
+    # из настоящих записей в workouts при каждом запросе (см. streak_goals.compute_streak) —
+    # так его в принципе нечем накрутить в обход реальных тренировок.
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_streak_goals (
+            user_id BIGINT PRIMARY KEY,
+            target_weekdays INTEGER[] NOT NULL,
+            schedule_set_at TEXT NOT NULL
+        )
+        """
+    )
+
     # Библиотека упражнений с иллюстрациями техники (шаг 1 плана по гифкам/видео — см.
     # scripts/import_exercise_library.py). Источник данных — free-exercise-db (Unlicense,
     # public domain), НЕ ExerciseDB/exercisedb-api (тот датасет снят с GitHub по DMCA как
@@ -371,9 +390,55 @@ async def count_all_workouts() -> int:
 
 
 async def count_user_workouts(user_id: int) -> int:
-    """То же самое, но только для одного пользователя — для /debug_db."""
+    """
+    То же самое, но только для одного пользователя — используется и для /debug_db, и как
+    "общее число записанных тренировок" для системы званий (см. streak_goals.get_rank_title,
+    api.py: GET /api/user/{user_id}/streak).
+    """
     pool = await get_pool()
     return await pool.fetchval("SELECT COUNT(*) FROM workouts WHERE user_id = $1", user_id)
+
+
+async def get_workout_dates(user_id: int) -> list:
+    """
+    Отсортированный список уникальных календарных дат (без времени), когда пользователь
+    записал хотя бы одну тренировку — сырые данные для расчёта "целевого" streak (см.
+    streak_goals.compute_streak). Дедупликация по дате — намеренно в Python, а не в SQL
+    (DISTINCT по полному created_at не сработал бы, т.к. время разное даже в один день).
+    """
+    pool = await get_pool()
+    rows = await pool.fetch("SELECT created_at FROM workouts WHERE user_id = $1", user_id)
+    unique_dates = {date.fromisoformat(row["created_at"].split("T")[0]) for row in rows}
+    return sorted(unique_dates)
+
+
+async def get_streak_goal(user_id: int) -> Optional[dict]:
+    """Личное расписание пользователя для целевого streak, либо None, если ещё не задано."""
+    pool = await get_pool()
+    row = await pool.fetchrow("SELECT * FROM user_streak_goals WHERE user_id = $1", user_id)
+    return dict(row) if row else None
+
+
+@_with_db_retry()
+async def save_streak_goal(user_id: int, target_weekdays: list, schedule_set_at: date) -> None:
+    """
+    Сохраняет (или полностью перезаписывает) целевые дни недели пользователя — upsert.
+    schedule_set_at сознательно перезаписывается при КАЖДОМ вызове (в т.ч. при явной смене
+    расписания пользователем) — см. комментарий у CREATE TABLE user_streak_goals в init_db.
+    """
+    pool = await get_pool()
+    await pool.execute(
+        """
+        INSERT INTO user_streak_goals (user_id, target_weekdays, schedule_set_at)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (user_id) DO UPDATE SET
+            target_weekdays = excluded.target_weekdays,
+            schedule_set_at = excluded.schedule_set_at
+        """,
+        user_id,
+        target_weekdays,
+        schedule_set_at.isoformat(),
+    )
 
 
 async def get_recent_workouts(user_id: int, limit: int = 5) -> list:

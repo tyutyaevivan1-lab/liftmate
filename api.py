@@ -44,6 +44,7 @@ import hmac
 import json
 import logging
 import time
+from datetime import date
 from typing import Optional
 from urllib.parse import parse_qsl
 
@@ -56,15 +57,21 @@ from pydantic import BaseModel
 from config import BOT_TOKEN, WEBAPP_URL
 from database import (
     close_pool,
+    count_user_workouts,
+    get_fitness_profile,
     get_last_user_program,
     get_last_workout,
+    get_streak_goal,
     get_user_language,
     get_user_stats,
+    get_workout_dates,
     get_workout_history,
     init_db,
+    save_streak_goal,
     save_user_program,
 )
 from program import shorten_program_day
+from streak_goals import compute_streak, default_target_weekdays, get_rank_title
 
 # initData считается действительной не дольше суток — после этого Web App должен
 # быть переоткрыт заново (Telegram сам обновляет initData при каждом открытии)
@@ -298,6 +305,16 @@ class ShortenProgramRequest(BaseModel):
     target_exercise_count: int
 
 
+class StreakResponse(BaseModel):
+    # ISO дни недели (1=пн..7=вс) — личное расписание тренировок пользователя, см.
+    # streak_goals.py. Отдельно от программных сплитов (days_per_week/chosen_split).
+    target_weekdays: list[int]
+    current_streak: int
+    longest_streak: int
+    total_workouts: int
+    rank_title: str
+
+
 def _to_entry(row: dict) -> WorkoutEntry:
     # created_at хранится как полный ISO-datetime ("2026-07-01T18:32:00.123456"),
     # а Web App'у нужна только дата — берём часть до "T"
@@ -446,6 +463,56 @@ async def shorten_latest_program(
         days=[ProgramDay(**day) for day in shortened_days],
         created_at=saved["created_at"].split("T")[0],
         is_premium=is_premium,
+    )
+
+
+@app.get("/api/user/{user_id}/streak", response_model=StreakResponse)
+async def get_streak(
+    user_id: int = Path(..., description="Telegram user ID"),
+    telegram_user: dict = Depends(require_telegram_user),
+) -> StreakResponse:
+    """
+    "Целевой" streak по личному расписанию пользователя (см. streak_goals.py) + звание по
+    общему числу записанных тренировок — НЕ то же самое, что user_stats.current_streak
+    (публичный лидерборд по подряд идущим календарным дням, см. leaderboard.py).
+
+    Если расписание ещё не задано (пользователь никогда явно не выбирал дни недели —
+    настройка через Web App/бота будет отдельным шагом) — считаем разумный дефолт из
+    days_per_week сплит-профиля (если есть) и сохраняем его здесь же, привязав точку
+    отсчёта (schedule_set_at) к дате первой тренировки пользователя (а не к "сегодня") —
+    иначе streak всегда стартовал бы с нуля для всех, у кого уже есть история тренировок.
+    """
+    _ensure_matches_authenticated_user(user_id, telegram_user)
+
+    language = await get_user_language(user_id) or "en"
+    workout_dates = await get_workout_dates(user_id)
+
+    goal = await get_streak_goal(user_id)
+    if goal is None:
+        profile = await get_fitness_profile(user_id)
+        days_per_week = profile.get("days_per_week") if profile else None
+        target_weekdays = default_target_weekdays(days_per_week)
+        schedule_set_at = workout_dates[0] if workout_dates else date.today()
+        await save_streak_goal(user_id, target_weekdays, schedule_set_at)
+    else:
+        target_weekdays = goal["target_weekdays"]
+        schedule_set_at = date.fromisoformat(goal["schedule_set_at"])
+
+    result = compute_streak(set(target_weekdays), set(workout_dates), schedule_set_at, date.today())
+    total_workouts = await count_user_workouts(user_id)
+    rank_title = get_rank_title(total_workouts, language)
+
+    logger.info(
+        "streak: user_id=%s -> current=%d longest=%d total_workouts=%d rank=%r",
+        user_id, result["current_streak"], result["longest_streak"], total_workouts, rank_title,
+    )
+
+    return StreakResponse(
+        target_weekdays=result["target_weekdays"],
+        current_streak=result["current_streak"],
+        longest_streak=result["longest_streak"],
+        total_workouts=total_workouts,
+        rank_title=rank_title,
     )
 
 
