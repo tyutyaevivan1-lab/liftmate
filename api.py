@@ -44,7 +44,7 @@ import hmac
 import json
 import logging
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 from urllib.parse import parse_qsl
 
@@ -60,6 +60,7 @@ from database import (
     get_fitness_profile,
     get_last_user_program,
     get_last_workout,
+    get_last_workout_for_user,
     get_streak_goal,
     get_user_language,
     get_user_stats,
@@ -317,6 +318,20 @@ class StreakResponse(BaseModel):
     # тренировался 9 разных дней — исправлено на len(get_workout_dates(...)).
     total_workout_days: int
     rank_title: str
+    # Число уникальных дней с тренировкой за последние 7 дней (включая сегодня) — для
+    # карточки "За неделю" на главном экране Web App. Считается тут же, из уже
+    # полученного get_workout_dates(...), без дополнительного запроса к БД.
+    workouts_last_7_days: int
+
+
+class LastWorkoutResponse(BaseModel):
+    # Всё None, если у пользователя ещё вообще нет ни одной записи — это не ошибка,
+    # просто новый пользователь (см. карточку "Последняя тренировка" на главном экране)
+    exercise_name: Optional[str] = None
+    weight: Optional[float] = None
+    reps: Optional[int] = None
+    sets: Optional[int] = None
+    date: Optional[str] = None
 
 
 def _to_entry(row: dict) -> WorkoutEntry:
@@ -506,9 +521,12 @@ async def get_streak(
     total_workout_days = len(workout_dates)
     rank_title = get_rank_title(total_workout_days, language)
 
+    week_ago = date.today() - timedelta(days=6)  # включая сегодня — итого 7 календарных дней
+    workouts_last_7_days = len([d for d in workout_dates if d >= week_ago])
+
     logger.info(
-        "streak: user_id=%s -> current=%d longest=%d total_workout_days=%d rank=%r",
-        user_id, result["current_streak"], result["longest_streak"], total_workout_days, rank_title,
+        "streak: user_id=%s -> current=%d longest=%d total_workout_days=%d workouts_last_7_days=%d rank=%r",
+        user_id, result["current_streak"], result["longest_streak"], total_workout_days, workouts_last_7_days, rank_title,
     )
 
     return StreakResponse(
@@ -517,6 +535,36 @@ async def get_streak(
         longest_streak=result["longest_streak"],
         total_workout_days=total_workout_days,
         rank_title=rank_title,
+        workouts_last_7_days=workouts_last_7_days,
+    )
+
+
+@app.get("/api/user/{user_id}/workouts/last", response_model=LastWorkoutResponse)
+async def get_last_workout_any(
+    user_id: int = Path(..., description="Telegram user ID"),
+    telegram_user: dict = Depends(require_telegram_user),
+) -> LastWorkoutResponse:
+    """
+    Самая последняя запись пользователя, ЛЮБОЕ упражнение (переиспользует
+    database.get_last_workout_for_user — ту же функцию, что бот использует для
+    "ещё один подход") — для карточки "Последняя тренировка" на главном экране Web App.
+    Локализация названия упражнения — на стороне фронтенда (см. webapp/app.js:
+    displayExerciseName), т.к. кастомные упражнения пользователя хранятся без переводов.
+    """
+    _ensure_matches_authenticated_user(user_id, telegram_user)
+
+    row = await get_last_workout_for_user(user_id)
+    if row is None:
+        logger.info("workouts/last: user_id=%s -> нет записей", user_id)
+        return LastWorkoutResponse()
+
+    logger.info("workouts/last: user_id=%s -> %s", user_id, row["exercise_name"])
+    return LastWorkoutResponse(
+        exercise_name=row["exercise_name"],
+        weight=row["weight"],
+        reps=row["reps"],
+        sets=row["sets"],
+        date=row["created_at"].split("T")[0],
     )
 
 

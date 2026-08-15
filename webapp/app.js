@@ -155,6 +155,29 @@ const UI_TEXT = {
     en: "✂️ Shorten the program",
     fr: "✂️ Raccourcir le programme",
   },
+
+  // Нижнее таб-меню (см. app.js: switchTab)
+  navHome: { ru: "Главная", en: "Home", fr: "Accueil" },
+  navProgram: { ru: "Программа", en: "Program", fr: "Programme" },
+  navProgress: { ru: "Прогресс", en: "Progress", fr: "Progression" },
+  navProfile: { ru: "Профиль", en: "Profile", fr: "Profil" },
+
+  // Экран "Главная" — дашборд
+  todayPlanTitle: { ru: "Сегодня по плану", en: "Today's plan", fr: "Aujourd'hui au programme" },
+  todayPlanRestDay: { ru: "Сегодня отдых 💤", en: "Rest day today 💤", fr: "Jour de repos 💤" },
+  todayPlanNoProgram: { ru: "Нет активной программы", en: "No active program", fr: "Aucun programme actif" },
+  weekTitle: { ru: "За неделю", en: "This week", fr: "Cette semaine" },
+  lastWorkoutTitle: { ru: "Последняя тренировка", en: "Last workout", fr: "Dernier entraînement" },
+  lastWorkoutEmpty: {
+    ru: "Пока нет тренировок — запиши первую в чате с ботом!",
+    en: "No workouts yet — log your first one in chat with the bot!",
+    fr: "Pas encore d'entraînement — enregistre le premier dans le chat avec le bot !",
+  },
+  profileComingSoonText: {
+    ru: "Скоро здесь появится профиль 🚧",
+    en: "Your profile is coming soon 🚧",
+    fr: "Ton profil arrive bientôt 🚧",
+  },
 };
 
 // Язык интерфейса: подтягивается из настроек пользователя в боте (/language,
@@ -178,6 +201,28 @@ function t(dict) {
 function exerciseName(exercise) {
   const lang = pickLanguage(currentLanguage);
   return exercise[lang] || exercise.en;
+}
+
+// Ищет упражнение по каноническому английскому названию, как оно хранится в БД (см.
+// exercises_data.py: get_canonical_exercise_name) — нужно, чтобы локализовать название
+// на карточке "Последняя тренировка" (там приходит сырая строка, не объект упражнения).
+function findExerciseByCanonicalName(nameEn) {
+  const lowered = String(nameEn || "").toLowerCase();
+  for (const category of Object.values(EXERCISE_CATEGORIES)) {
+    const match = category.exercises.find((exercise) => exercise.en.toLowerCase() === lowered);
+    if (match) return match;
+  }
+  return null;
+}
+
+// Локализованное название для отображения, либо — если это кастомное упражнение
+// пользователя (нет в EXERCISE_CATEGORIES, переводов не хранится) — само название как
+// есть, с заглавной буквы.
+function displayExerciseName(nameEn) {
+  const match = findExerciseByCanonicalName(nameEn);
+  if (match) return exerciseName(match);
+  const raw = String(nameEn || "");
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +325,14 @@ function fetchLatestProgram(userId) {
   return fetchFromApi(`/api/user/${userId}/program/latest`);
 }
 
+function fetchStreak(userId) {
+  return fetchFromApi(`/api/user/${userId}/streak`);
+}
+
+function fetchLastWorkoutAny(userId) {
+  return fetchFromApi(`/api/user/${userId}/workouts/last`);
+}
+
 async function postShortenProgram(userId, targetExerciseCount) {
   const response = await fetch(`${API_BASE_URL}/api/user/${userId}/program/shorten`, {
     method: "POST",
@@ -329,18 +382,32 @@ async function detectUserLanguage() {
 // ---------------------------------------------------------------------------
 
 const screenElements = {
+  home: document.getElementById("screen-home"),
   categories: document.getElementById("screen-categories"),
   exercises: document.getElementById("screen-exercises"),
   "custom-form": document.getElementById("screen-custom-form"),
   "exercise-detail": document.getElementById("screen-exercise-detail"),
   program: document.getElementById("screen-program"),
+  profile: document.getElementById("screen-profile"),
 };
 
 const backButton = document.getElementById("backButton");
 const screenTitleEl = document.getElementById("screenTitle");
+const tabBarEl = document.getElementById("tabBar");
 
-// Стек экранов для кнопки "Назад": всегда начинаем с категорий
-let screenStack = ["categories"];
+// Нижнее таб-меню: каждая вкладка — это "корневой" экран своего мини-стека навигации.
+// Переключение вкладок сбрасывает стек до корня этой вкладки (см. switchTab) — "Прогресс"
+// переиспользует существующий экран "categories" (был корнем всего приложения раньше).
+const TAB_ROOT_SCREEN = {
+  home: "home",
+  program: "program",
+  progress: "categories",
+  profile: "profile",
+};
+
+let activeTab = "home";
+// Стек экранов для кнопки "Назад" в пределах текущей вкладки
+let screenStack = [TAB_ROOT_SCREEN[activeTab]];
 // Категория, для которой сейчас открыт список упражнений / форма своего упражнения
 let activeCategoryKey = null;
 // Упражнение, открытое на экране "exercise-detail" (объект из EXERCISE_CATEGORIES)
@@ -352,24 +419,26 @@ function currentScreen() {
 
 function renderHeader() {
   const screen = currentScreen();
+  const atTabRoot = screenStack.length <= 1;
 
-  if (screen === "categories") {
+  if (screen === "home") {
     screenTitleEl.textContent = t(UI_TEXT.appTitle);
-    backButton.hidden = true;
+  } else if (screen === "categories") {
+    screenTitleEl.textContent = t(UI_TEXT.navProgress);
   } else if (screen === "exercises") {
     const category = activeCategoryKey ? EXERCISE_CATEGORIES[activeCategoryKey] : null;
     screenTitleEl.textContent = category ? t(category.name) : t(UI_TEXT.exercisesTitleFallback);
-    backButton.hidden = false;
   } else if (screen === "custom-form") {
     screenTitleEl.textContent = t(UI_TEXT.customFormTitle);
-    backButton.hidden = false;
   } else if (screen === "exercise-detail") {
     screenTitleEl.textContent = activeExercise ? exerciseName(activeExercise) : t(UI_TEXT.exercisesTitleFallback);
-    backButton.hidden = false;
   } else if (screen === "program") {
     screenTitleEl.textContent = t(UI_TEXT.programTitle);
-    backButton.hidden = false;
+  } else if (screen === "profile") {
+    screenTitleEl.textContent = t(UI_TEXT.navProfile);
   }
+
+  backButton.hidden = atTabRoot;
 
   if (tg) {
     if (backButton.hidden) {
@@ -378,6 +447,12 @@ function renderHeader() {
       tg.BackButton.show();
     }
   }
+}
+
+function renderTabBar() {
+  tabBarEl.querySelectorAll(".tab-bar__item").forEach((item) => {
+    item.classList.toggle("tab-bar__item--active", item.dataset.tab === activeTab);
+  });
 }
 
 function showScreen(name, { push = true } = {}) {
@@ -419,6 +494,41 @@ function goBack() {
 
   renderHeader();
 }
+
+// Переключение вкладки нижнего меню — сбрасывает стек навигации до корня этой вкладки
+// (незавершённая навигация в ДРУГОЙ вкладке отбрасывается, это ожидаемо: как и в
+// большинстве мобильных приложений, вкладки не запоминают промежуточную позицию).
+function switchTab(tab) {
+  if (tab === activeTab && screenStack.length === 1) {
+    return;
+  }
+
+  activeTab = tab;
+  const rootScreen = TAB_ROOT_SCREEN[tab];
+
+  Object.values(screenElements).forEach((el) => el.classList.remove("screen--active", "screen--leaving"));
+  screenElements[rootScreen].classList.add("screen--active");
+  screenStack = [rootScreen];
+  activeCategoryKey = null;
+  activeExercise = null;
+
+  renderHeader();
+  renderTabBar();
+
+  if (rootScreen === "home") {
+    loadHomeScreen();
+  } else if (rootScreen === "program") {
+    loadProgramScreen();
+  } else if (rootScreen === "categories") {
+    renderCategories();
+  } else if (rootScreen === "profile") {
+    renderProfileScreen();
+  }
+}
+
+tabBarEl.querySelectorAll(".tab-bar__item").forEach((item) => {
+  item.addEventListener("click", () => switchTab(item.dataset.tab));
+});
 
 backButton.addEventListener("click", goBack);
 
@@ -530,6 +640,37 @@ function pluralizeSetsRu(count) {
   if (lastDigit === 1) return "подход";
   if (lastDigit >= 2 && lastDigit <= 4) return "подхода";
   return "подходов";
+}
+
+function pluralizeWorkoutsRu(count) {
+  const n = Math.abs(count) % 100;
+  if (n >= 11 && n <= 14) return "тренировок";
+  const lastDigit = n % 10;
+  if (lastDigit === 1) return "тренировка";
+  if (lastDigit >= 2 && lastDigit <= 4) return "тренировки";
+  return "тренировок";
+}
+
+// "Серия — N тренировок" (ru) / "N-workout streak" (en) — см. карточку streak на главном экране
+function formatStreakLabel(count) {
+  const lang = pickLanguage(currentLanguage);
+  if (lang === "ru") {
+    return `Серия — ${count} ${pluralizeWorkoutsRu(count)}`;
+  }
+  if (lang === "fr") {
+    const word = count === 1 ? "entraînement" : "entraînements";
+    return `Série de ${count} ${word}`;
+  }
+  const word = count === 1 ? "workout" : "workouts";
+  return `${count}-${word} streak`;
+}
+
+// "5 тренировок" / "5 workouts" — для карточки "За неделю"
+function formatWorkoutsCount(count) {
+  const lang = pickLanguage(currentLanguage);
+  if (lang === "ru") return `${count} ${pluralizeWorkoutsRu(count)}`;
+  if (lang === "fr") return `${count} ${count === 1 ? "entraînement" : "entraînements"}`;
+  return `${count} ${count === 1 ? "workout" : "workouts"}`;
 }
 
 function formatLastResult(entry) {
@@ -845,12 +986,127 @@ async function loadProgramScreen() {
   }
 }
 
-function openProgramScreen() {
-  showScreen("program");
-  loadProgramScreen();
+// ---------------------------------------------------------------------------
+// Экран "Главная" — дашборд: streak/звание, план на сегодня, неделя, последняя тренировка
+// ---------------------------------------------------------------------------
+
+// Сопоставляет "сегодня" с днём программы по позиции в отсортированных target_weekdays
+// (см. streak_goals.py) — например для сплита на 3 дня и расписания пн/ср/пт день 1
+// приходится на понедельник, день 2 — на среду, день 3 — на пятницу. Готовой привязки
+// "день программы -> день недели" в бэкенде нет (программа — это просто
+// последовательность дней, см. program.py), поэтому это соответствие строится здесь же,
+// на фронтенде, из двух уже загруженных ответов API, а не через отдельный эндпоинт.
+function computeTodayProgramDay(programDays, targetWeekdays) {
+  if (!programDays || programDays.length === 0) {
+    return { kind: "no-program" };
+  }
+  if (programDays.length === 1) {
+    return { kind: "day", day: programDays[0] };
+  }
+  if (!targetWeekdays || targetWeekdays.length === 0) {
+    return { kind: "day", day: programDays[0] };
+  }
+
+  const jsDay = new Date().getDay(); // 0=вс..6=сб
+  const todayIso = jsDay === 0 ? 7 : jsDay; // -> 1=пн..7=вс, как в target_weekdays
+  const sorted = [...targetWeekdays].sort((a, b) => a - b);
+  const position = sorted.indexOf(todayIso);
+
+  if (position === -1) {
+    return { kind: "rest-day" };
+  }
+  return { kind: "day", day: programDays[position % programDays.length] };
 }
 
-document.getElementById("programNavButton").addEventListener("click", openProgramScreen);
+function renderHomeScreen(container, streak, program, lastWorkout) {
+  const todayPlan = computeTodayProgramDay(program.days, streak.target_weekdays);
+
+  let todayPlanValueHtml;
+  if (todayPlan.kind === "no-program") {
+    todayPlanValueHtml = `<div class="stat-card__value stat-card__value--muted">${t(UI_TEXT.todayPlanNoProgram)}</div>`;
+  } else if (todayPlan.kind === "rest-day") {
+    todayPlanValueHtml = `<div class="stat-card__value stat-card__value--muted">${t(UI_TEXT.todayPlanRestDay)}</div>`;
+  } else {
+    const label = todayPlan.day.day_title || dayTabLabel(todayPlan.day, 0);
+    todayPlanValueHtml = `<div class="stat-card__value">${label}</div>`;
+  }
+
+  const lastWorkoutHtml = lastWorkout && lastWorkout.exercise_name
+    ? `
+      <div class="last-workout-card__name">${displayExerciseName(lastWorkout.exercise_name)}</div>
+      <div class="last-workout-card__meta">${formatLastResult(lastWorkout)}</div>
+    `
+    : `<div class="last-workout-card__empty">${t(UI_TEXT.lastWorkoutEmpty)}</div>`;
+
+  container.innerHTML = `
+    <div class="streak-card">
+      <div class="streak-card__icon" aria-hidden="true">🔥</div>
+      <div class="streak-card__value">${formatStreakLabel(streak.current_streak)}</div>
+      <div class="streak-card__rank">${streak.rank_title}</div>
+    </div>
+
+    <div class="stat-cards-row">
+      <button class="stat-card" type="button" id="todayPlanCard">
+        <div class="stat-card__label">${t(UI_TEXT.todayPlanTitle)}</div>
+        ${todayPlanValueHtml}
+      </button>
+      <div class="stat-card stat-card--static">
+        <div class="stat-card__label">${t(UI_TEXT.weekTitle)}</div>
+        <div class="stat-card__value">${formatWorkoutsCount(streak.workouts_last_7_days)}</div>
+      </div>
+    </div>
+
+    <div class="last-workout-card">
+      <div class="last-workout-card__label">${t(UI_TEXT.lastWorkoutTitle)}</div>
+      ${lastWorkoutHtml}
+    </div>
+  `;
+
+  // "Сегодня по плану" ведёт во вкладку "Программа" — но не создаёт программу сама
+  // (для этого предлагается закрыть Web App и написать боту /program, как и на
+  // самом экране программы, см. renderProgramEmpty)
+  document.getElementById("todayPlanCard").addEventListener("click", () => switchTab("program"));
+}
+
+async function loadHomeScreen() {
+  const container = document.getElementById("homeScreen");
+  container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.loadingText)}</p>`;
+
+  const userId = getTelegramUserId();
+  if (!userId) {
+    container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.notInTelegramText)}</p>`;
+    return;
+  }
+
+  try {
+    const [streak, program, lastWorkout] = await Promise.all([
+      fetchStreak(userId),
+      fetchLatestProgram(userId),
+      fetchLastWorkoutAny(userId),
+    ]);
+
+    // Пользователь мог уйти с вкладки "Главная", пока запросы летали туда-обратно
+    if (activeTab !== "home") {
+      return;
+    }
+
+    renderHomeScreen(container, streak, program, lastWorkout);
+  } catch (error) {
+    console.error("Не удалось загрузить главный экран:", error);
+    if (activeTab === "home") {
+      container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.errorText)}</p>`;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Экран "Профиль" — пока заглушка (реальный контент: отдельная задача)
+// ---------------------------------------------------------------------------
+
+function renderProfileScreen() {
+  const container = document.getElementById("profileScreen");
+  container.innerHTML = `<p class="exercise-detail__status">${t(UI_TEXT.profileComingSoonText)}</p>`;
+}
 
 // ---------------------------------------------------------------------------
 // Инициализация
@@ -864,10 +1120,17 @@ async function init() {
   currentLanguage = await detectUserLanguage();
 
   document.getElementById("addCustomButtonLabel").textContent = t(UI_TEXT.addCustom);
-  document.getElementById("programNavButtonLabel").textContent = t(UI_TEXT.programNavLabel);
 
-  renderCategories();
+  document.querySelectorAll(".tab-bar__label").forEach((label) => {
+    const key = { home: "navHome", program: "navProgram", progress: "navProgress", profile: "navProfile" }[
+      label.dataset.tabLabel
+    ];
+    label.textContent = t(UI_TEXT[key]);
+  });
+
+  renderTabBar();
   renderHeader();
+  loadHomeScreen();
 }
 
 document.addEventListener("DOMContentLoaded", () => {

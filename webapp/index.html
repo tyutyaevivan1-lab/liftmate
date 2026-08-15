@@ -24,12 +24,13 @@
     </header>
 
     <main class="screens" id="screens">
-      <!-- Экран 1: категории мышц -->
-      <section class="screen screen--active" id="screen-categories" data-screen="categories">
-        <button class="program-nav-button" id="programNavButton" type="button">
-          <span class="program-nav-button__icon" aria-hidden="true">🗓</span>
-          <span id="programNavButtonLabel">Программа</span>
-        </button>
+      <!-- Экран "Главная": дашборд (streak/звание, план на сегодня, неделя, последняя тренировка) -->
+      <section class="screen screen--active" id="screen-home" data-screen="home">
+        <div class="home-screen" id="homeScreen"></div>
+      </section>
+
+      <!-- Экран "Прогресс" (бывший корневой экран) — категории мышц -->
+      <section class="screen" id="screen-categories" data-screen="categories">
         <div class="category-grid" id="categoryGrid"></div>
       </section>
 
@@ -37,6 +38,11 @@
            остальные заблокированы/размыты, если пользователь не premium) -->
       <section class="screen" id="screen-program" data-screen="program">
         <div class="program-screen" id="programScreen"></div>
+      </section>
+
+      <!-- Экран "Профиль" — пока заглушка -->
+      <section class="screen" id="screen-profile" data-screen="profile">
+        <div class="profile-screen" id="profileScreen"></div>
       </section>
 
       <!-- Экран 2: упражнения выбранной категории -->
@@ -72,6 +78,26 @@
         <div class="exercise-detail" id="exerciseDetail"></div>
       </section>
     </main>
+
+    <!-- Нижнее таб-меню: Главная / Программа / Прогресс / Профиль (см. app.js: switchTab) -->
+    <nav class="tab-bar" id="tabBar">
+      <button class="tab-bar__item" type="button" data-tab="home">
+        <span class="tab-bar__icon" aria-hidden="true">🏠</span>
+        <span class="tab-bar__label" data-tab-label="home">Главная</span>
+      </button>
+      <button class="tab-bar__item" type="button" data-tab="program">
+        <span class="tab-bar__icon" aria-hidden="true">🗓</span>
+        <span class="tab-bar__label" data-tab-label="program">Программа</span>
+      </button>
+      <button class="tab-bar__item" type="button" data-tab="progress">
+        <span class="tab-bar__icon" aria-hidden="true">📈</span>
+        <span class="tab-bar__label" data-tab-label="progress">Прогресс</span>
+      </button>
+      <button class="tab-bar__item" type="button" data-tab="profile">
+        <span class="tab-bar__icon" aria-hidden="true">👤</span>
+        <span class="tab-bar__label" data-tab-label="profile">Профиль</span>
+      </button>
+    </nav>
   </div>
 
   <script src="app.js"></script>

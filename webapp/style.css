@@ -194,34 +194,8 @@ body {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Экран 1: сетка категорий                                                */
+/* Экран "Прогресс": сетка категорий                                       */
 /* ---------------------------------------------------------------------- */
-
-/* Кнопка перехода на экран "Программа" — над сеткой категорий, лаймовый градиент,
-   как основное действие (в отличие от пунктирной "Добавить своё упражнение" на экране 2) */
-.program-nav-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  margin-bottom: 14px;
-  padding: 14px 16px;
-  border: none;
-  border-radius: var(--control-radius);
-  background: var(--accent-lime-gradient);
-  color: var(--accent-contrast-text);
-  font-family: var(--font-family);
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.15s ease, filter 0.15s ease;
-}
-
-.program-nav-button:active {
-  transform: scale(0.98);
-  filter: brightness(0.94);
-}
 
 .category-grid {
   display: grid;
@@ -667,6 +641,183 @@ body {
 
 .program-empty__hint {
   margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Нижнее таб-меню: Главная / Программа / Прогресс / Профиль               */
+/* ---------------------------------------------------------------------- */
+
+.tab-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-shrink: 0;
+  background: var(--bg-page-from);
+  border-top: 1px solid var(--border-card);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  transition: background var(--transition-duration) ease, border-color var(--transition-duration) ease;
+}
+
+.tab-bar__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--transition-duration) ease;
+}
+
+.tab-bar__icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.tab-bar__item--active {
+  color: var(--accent-lime);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Экран "Главная": дашборд                                                */
+/* ---------------------------------------------------------------------- */
+
+.home-screen {
+  display: flex;
+  flex-direction: column;
+}
+
+.streak-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 26px 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--card-radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.streak-card__icon {
+  font-size: 36px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.streak-card__value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.streak-card__rank {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-lime);
+}
+
+.stat-cards-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.stat-card {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--card-radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  font-family: var(--font-family);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color var(--transition-duration) ease;
+}
+
+.stat-card:active {
+  transform: scale(0.97);
+  border-color: var(--accent-lime);
+}
+
+/* Карточка "За неделю" — чисто информационная, без действия по тапу */
+.stat-card--static {
+  cursor: default;
+}
+
+.stat-card--static:active {
+  transform: none;
+  border-color: var(--border-card);
+}
+
+.stat-card__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.stat-card__value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.stat-card__value--muted {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.last-workout-card {
+  padding: 16px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--card-radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.last-workout-card__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.last-workout-card__name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.last-workout-card__meta {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-lime);
+}
+
+.last-workout-card__empty {
   font-size: 13px;
   color: var(--text-secondary);
 }
