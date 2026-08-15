@@ -32,6 +32,8 @@ SPLIT_CONTINUE_LOCKED_CALLBACK = "split_continue_locked"
 SPLIT_LEARN_PREMIUM_CALLBACK = "split_learn_premium"
 SPLIT_GOAL_CALLBACK_PREFIX = "split_goal"
 UPDATE_PROFILE_CTA_CALLBACK = "update_profile_cta"
+SCHEDULE_TOGGLE_CALLBACK_PREFIX = "sched_toggle"
+SCHEDULE_DONE_CALLBACK = "sched_done"
 
 _ADD_CUSTOM_LABEL = {"ru": "➕ Добавить своё упражнение", "en": "➕ Add your own exercise", "fr": "➕ Ajouter mon exercice"}
 _BACK_LABEL = {"ru": "⬅️ Назад к категориям", "en": "⬅️ Back to categories", "fr": "⬅️ Retour aux catégories"}
@@ -249,6 +251,38 @@ _UPDATE_PROFILE_CTA_LABEL = {
     "fr": "🔄 Mettre à jour le profil",
 }
 
+# ---------------------------------------------------------------------------
+# /schedule — toggle-выбор целевых дней недели для системы streak (см. streak_goals.py,
+# handlers.py: cmd_schedule/handle_schedule_toggle/handle_schedule_done). Короткие подписи
+# дней недели по ISO-номеру (1=пн..7=вс) — используются и в клавиатуре, и в подтверждении.
+# ---------------------------------------------------------------------------
+
+_WEEKDAY_SHORT_LABELS = {
+    "ru": {1: "Пн", 2: "Вт", 3: "Ср", 4: "Чт", 5: "Пт", 6: "Сб", 7: "Вс"},
+    "en": {1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 7: "Sun"},
+    "fr": {1: "Lun", 2: "Mar", 3: "Mer", 4: "Jeu", 5: "Ven", 6: "Sam", 7: "Dim"},
+}
+
+_SCHEDULE_PROMPT_TEXT = {
+    "ru": "В какие дни недели планируешь тренироваться? Отметь нужные дни и нажми «Готово».",
+    "en": "Which days of the week do you plan to train? Tap the days you want, then hit \"Done\".",
+    "fr": "Quels jours de la semaine comptes-tu t'entraîner ? Sélectionne les jours puis appuie sur « Terminé ».",
+}
+
+_SCHEDULE_DONE_LABEL = {"ru": "✅ Готово", "en": "✅ Done", "fr": "✅ Terminé"}
+
+_SCHEDULE_SAVED_TEXT = {
+    "ru": "Расписание сохранено: {days} 💪 Streak теперь считается по этим дням. Изменить можно в любой момент командой /schedule.",
+    "en": "Schedule saved: {days} 💪 Your streak is now tracked against these days. You can change it anytime with /schedule.",
+    "fr": "Programme enregistré : {days} 💪 Ton streak est maintenant suivi selon ces jours. Tu peux le modifier à tout moment avec /schedule.",
+}
+
+_SCHEDULE_EMPTY_SELECTION_TEXT = {
+    "ru": "Выбери хотя бы один день",
+    "en": "Pick at least one day",
+    "fr": "Choisis au moins un jour",
+}
+
 # Интро мини-опроса профиля специально для онбординга (сразу после выбора языка) — без
 # призыва в духе "погнали" и без предположения, что пользователь прямо сейчас в зале.
 # Объединяет вводную фразу и первый вопрос опроса в одно сообщение (тот же вопрос, что и
@@ -263,9 +297,9 @@ _ONBOARDING_PROFILE_INTRO_TEXT = {
 # Показывается сразу после сохранения профиля, если опрос запущен из онбординга (а не из
 # /program или /update_profile) — переход в Web App вместо продолжения диалога программы.
 _ONBOARDING_WEBAPP_CTA_TEXT = {
-    "ru": "Готово! Загляни в приложение — там профиль и первые шаги.",
-    "en": "All set! Check out the app — your profile and first steps are there.",
-    "fr": "C'est fait ! Jette un œil à l'application — ton profil et tes premiers pas y sont.",
+    "ru": "Готово! Загляни в приложение — там профиль и первые шаги.\n\nКстати, можешь задать конкретные дни тренировок командой /schedule — так streak будет точнее.",
+    "en": "All set! Check out the app — your profile and first steps are there.\n\nBy the way, you can set your specific training days with /schedule — it makes your streak more accurate.",
+    "fr": "C'est fait ! Jette un œil à l'application — ton profil et tes premiers pas y sont.\n\nAu fait, tu peux définir tes jours d'entraînement avec /schedule — ça rend ton streak plus précis.",
 }
 
 _OPEN_WEBAPP_ONBOARDING_LABEL = {
@@ -307,6 +341,7 @@ _BOT_COMMANDS = {
         BotCommand(command="program", description="Программа тренировки на сегодня"),
         BotCommand(command="my_program", description="Последняя сохранённая программа"),
         BotCommand(command="update_profile", description="Обновить профиль (опыт/оборудование)"),
+        BotCommand(command="schedule", description="Дни тренировок для streak"),
         BotCommand(command="leaderboard", description="Таблица лидеров"),
         BotCommand(command="language", description="Сменить язык"),
     ],
@@ -316,6 +351,7 @@ _BOT_COMMANDS = {
         BotCommand(command="program", description="Today's workout program"),
         BotCommand(command="my_program", description="Your last saved program"),
         BotCommand(command="update_profile", description="Update profile (experience/equipment)"),
+        BotCommand(command="schedule", description="Training days for your streak"),
         BotCommand(command="leaderboard", description="Streak leaderboard"),
         BotCommand(command="language", description="Change language"),
     ],
@@ -325,6 +361,7 @@ _BOT_COMMANDS = {
         BotCommand(command="program", description="Programme d'entraînement du jour"),
         BotCommand(command="my_program", description="Dernier programme enregistré"),
         BotCommand(command="update_profile", description="Mettre à jour le profil (expérience/équipement)"),
+        BotCommand(command="schedule", description="Jours d'entraînement pour le streak"),
         BotCommand(command="leaderboard", description="Classement des séries"),
         BotCommand(command="language", description="Changer de langue"),
     ],
@@ -470,6 +507,39 @@ def build_returning_user_keyboard(language: str) -> InlineKeyboardMarkup:
 def update_profile_cta_label(language: str) -> str:
     """Подпись кнопки "Обновить профиль" — для подтверждения нажатия ("✅ ...")."""
     return _localized(_UPDATE_PROFILE_CTA_LABEL, language)
+
+
+def schedule_prompt_text(language: str) -> str:
+    """Текст приглашения выбрать целевые дни недели (см. /schedule)."""
+    return _localized(_SCHEDULE_PROMPT_TEXT, language)
+
+
+def build_schedule_keyboard(selected_weekdays: set, language: str) -> InlineKeyboardMarkup:
+    """
+    Toggle-клавиатура: 7 дней недели (чекмарка у уже выбранных) + кнопка "Готово". 4+3 в
+    ряд, чтобы влезало на маленьких экранах, "Готово" — отдельной строкой снизу.
+    """
+    lang = pick_language(language)
+    builder = InlineKeyboardBuilder()
+    for weekday in range(1, 8):
+        label = _WEEKDAY_SHORT_LABELS[lang][weekday]
+        text = f"✅ {label}" if weekday in selected_weekdays else label
+        builder.button(text=text, callback_data=f"{SCHEDULE_TOGGLE_CALLBACK_PREFIX}:{weekday}")
+    builder.button(text=_localized(_SCHEDULE_DONE_LABEL, language), callback_data=SCHEDULE_DONE_CALLBACK)
+    builder.adjust(4, 3, 1)
+    return builder.as_markup()
+
+
+def schedule_saved_text(selected_weekdays: list, language: str) -> str:
+    """Подтверждение сохранённого расписания — со списком дней на языке пользователя."""
+    lang = pick_language(language)
+    day_names = ", ".join(_WEEKDAY_SHORT_LABELS[lang][weekday] for weekday in sorted(selected_weekdays))
+    return _localized(_SCHEDULE_SAVED_TEXT, language, days=day_names)
+
+
+def schedule_empty_selection_text(language: str) -> str:
+    """Короткое предупреждение (всплывающий алерт), если нажали "Готово" без единого выбранного дня."""
+    return _localized(_SCHEDULE_EMPTY_SELECTION_TEXT, language)
 
 
 def onboarding_profile_intro_text(language: str) -> str:

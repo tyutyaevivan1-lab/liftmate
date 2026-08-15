@@ -89,8 +89,11 @@ def compute_streak(target_weekdays: set, workout_dates: set, schedule_set_at: da
     }
 
 
-# Пороги званий по ОБЩЕМУ числу когда-либо записанных тренировок (database.count_user_workouts),
-# НЕ по длине streak. От большего порога к меньшему — первое совпадение побеждает.
+# Пороги званий по числу УНИКАЛЬНЫХ ДНЕЙ, когда пользователь тренировался хотя бы раз
+# (len(database.get_workout_dates(...))) — НЕ по числу отдельных записей упражнений и
+# НЕ по длине streak. Раньше здесь ошибочно считались записи, что уравнивало 1 день из
+# 9 подходов с 9 разными тренировочными днями. От большего порога к меньшему — первое
+# совпадение побеждает.
 _RANK_THRESHOLDS = [
     (30, "🏆", {"ru": "Легенда зала", "en": "Gym Legend", "fr": "Légende de la salle"}),
     (15, "⚙️", {"ru": "Машина", "en": "Machine", "fr": "Machine"}),
@@ -100,12 +103,12 @@ _RANK_THRESHOLDS = [
 ]
 
 
-def get_rank_title(total_workouts: int, language: str) -> str:
+def get_rank_title(total_workout_days: int, language: str) -> str:
     """
-    Звание пользователя ("<название> <эмодзи>") по общему числу записанных тренировок.
+    Звание пользователя ("<название> <эмодзи>") по числу уникальных дней с тренировками.
     Последний порог в _RANK_THRESHOLDS — 0, так что цикл всегда находит совпадение.
     """
     lang = pick_language(language)
     for threshold, emoji, names in _RANK_THRESHOLDS:
-        if total_workouts >= threshold:
+        if total_workout_days >= threshold:
             return f"{names[lang]} {emoji}"

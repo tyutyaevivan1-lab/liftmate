@@ -1,6 +1,7 @@
 """Обработчики сообщений и inline-кнопок Telegram-бота LiftMate."""
 
 import json
+from datetime import date
 from typing import Optional
 
 from aiogram import F, Router
@@ -34,6 +35,7 @@ from database import (
     get_last_workout_for_user,
     get_leaderboard_top,
     get_recent_workouts,
+    get_streak_goal,
     get_user_language,
     get_user_rank,
     get_user_stats,
@@ -41,6 +43,7 @@ from database import (
     mark_tracking_intro_shown,
     redact_database_url,
     save_fitness_profile,
+    save_streak_goal,
     save_user_program,
     set_user_language,
     update_split_preference,
@@ -58,7 +61,8 @@ from program import (
     publish_program,
     split_label,
 )
-from states import ProfileStates, ProgramStates, WorkoutStates
+from states import ProfileStates, ProgramStates, ScheduleStates, WorkoutStates
+from streak_goals import default_target_weekdays
 
 router = Router()
 
@@ -266,6 +270,83 @@ async def handle_update_profile_cta(callback: CallbackQuery, state: FSMContext) 
     await callback.message.edit_text(f"✅ {keyboards.update_profile_cta_label(language)}")
     await callback.answer()
     await _start_profile_survey(callback.message, state, continue_to_program=False, language=language)
+
+
+async def _start_schedule_selection(message: Message, state: FSMContext, user_id: int, language: str) -> None:
+    """
+    Запускает (или перезапускает) toggle-выбор целевых дней недели для streak (см.
+    streak_goals.py). Предзаполняет чекмарки: уже сохранённым расписанием, если оно есть
+    (смена расписания), иначе разумным дефолтом по days_per_week сплит-профиля (если есть),
+    иначе нейтральным fallback (пн/ср/пт) — тот же дефолт, что api.get_streak использует
+    для ленивого автосоздания, см. streak_goals.default_target_weekdays.
+    """
+    goal = await get_streak_goal(user_id)
+    if goal:
+        selected = set(goal["target_weekdays"])
+    else:
+        profile = await get_fitness_profile(user_id)
+        days_per_week = profile.get("days_per_week") if profile else None
+        selected = set(default_target_weekdays(days_per_week))
+
+    await state.set_state(ScheduleStates.selecting_weekdays)
+    await state.update_data(selected_weekdays=sorted(selected))
+    await message.answer(
+        keyboards.schedule_prompt_text(language),
+        reply_markup=keyboards.build_schedule_keyboard(selected, language),
+    )
+
+
+@router.message(Command("schedule"))
+async def cmd_schedule(message: Message, state: FSMContext) -> None:
+    """Команда /schedule — выбрать или изменить целевые дни недели тренировок для streak."""
+    await state.clear()
+    user_id = message.from_user.id
+    language = await _get_language(user_id, message.from_user)
+
+    await _start_schedule_selection(message, state, user_id, language)
+
+
+@router.callback_query(ScheduleStates.selecting_weekdays, F.data.startswith(f"{keyboards.SCHEDULE_TOGGLE_CALLBACK_PREFIX}:"))
+async def handle_schedule_toggle(callback: CallbackQuery, state: FSMContext) -> None:
+    """Тап по одному дню недели — переключает чекмарку, не завершая выбор."""
+    weekday = int(callback.data.split(":", 1)[1])
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+
+    data = await state.get_data()
+    selected = set(data.get("selected_weekdays", []))
+    if weekday in selected:
+        selected.discard(weekday)
+    else:
+        selected.add(weekday)
+    await state.update_data(selected_weekdays=sorted(selected))
+
+    await callback.message.edit_reply_markup(reply_markup=keyboards.build_schedule_keyboard(selected, language))
+    await callback.answer()
+
+
+@router.callback_query(ScheduleStates.selecting_weekdays, F.data == keyboards.SCHEDULE_DONE_CALLBACK)
+async def handle_schedule_done(callback: CallbackQuery, state: FSMContext) -> None:
+    """
+    Кнопка "Готово" — сохраняет выбранные дни в user_streak_goals (см. database.save_streak_goal),
+    сбрасывая точку отсчёта streak на сегодня (старый streak под старое расписание не имеет
+    смысла для нового, см. комментарий у CREATE TABLE user_streak_goals в database.py). Без
+    выбранных дней ничего не сохраняем — просто просим выбрать хотя бы один.
+    """
+    user_id = callback.from_user.id
+    language = await _get_language(user_id, callback.from_user)
+
+    data = await state.get_data()
+    selected = sorted(set(data.get("selected_weekdays", [])))
+
+    if not selected:
+        await callback.answer(keyboards.schedule_empty_selection_text(language), show_alert=True)
+        return
+
+    await state.clear()
+    await save_streak_goal(user_id, selected, date.today())
+    await callback.message.edit_text(keyboards.schedule_saved_text(selected, language))
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith(f"{keyboards.EQUIPMENT_CALLBACK_PREFIX}:"))

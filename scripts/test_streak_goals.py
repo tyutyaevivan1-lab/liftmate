@@ -142,7 +142,7 @@ async def test_real_end_to_end() -> list:
 
         response1 = await api.get_streak(user_id=TEST_USER_ID, telegram_user=telegram_user)
         print(f"\nПосле 3 недель без пропусков (9 реальных записей): current_streak={response1.current_streak} "
-              f"longest_streak={response1.longest_streak} total_workouts={response1.total_workouts} "
+              f"longest_streak={response1.longest_streak} total_workout_days={response1.total_workout_days} "
               f"rank={response1.rank_title!r}")
         if response1.current_streak != 9:
             failures.append(f"Ожидалось current_streak=9 после 3 недель, получено {response1.current_streak}")

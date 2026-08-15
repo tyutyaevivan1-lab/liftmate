@@ -57,7 +57,6 @@ from pydantic import BaseModel
 from config import BOT_TOKEN, WEBAPP_URL
 from database import (
     close_pool,
-    count_user_workouts,
     get_fitness_profile,
     get_last_user_program,
     get_last_workout,
@@ -311,7 +310,12 @@ class StreakResponse(BaseModel):
     target_weekdays: list[int]
     current_streak: int
     longest_streak: int
-    total_workouts: int
+    # ЧИСЛО УНИКАЛЬНЫХ КАЛЕНДАРНЫХ ДНЕЙ с хотя бы одной тренировкой — НЕ число отдельных
+    # записей упражнений (это разные вещи: одна тренировка обычно = несколько записей).
+    # Раньше здесь ошибочно считались записи (database.count_user_workouts), из-за чего
+    # пользователь с 1 днём из 9 подходов получал такое же звание, как тот, кто реально
+    # тренировался 9 разных дней — исправлено на len(get_workout_dates(...)).
+    total_workout_days: int
     rank_title: str
 
 
@@ -499,19 +503,19 @@ async def get_streak(
         schedule_set_at = date.fromisoformat(goal["schedule_set_at"])
 
     result = compute_streak(set(target_weekdays), set(workout_dates), schedule_set_at, date.today())
-    total_workouts = await count_user_workouts(user_id)
-    rank_title = get_rank_title(total_workouts, language)
+    total_workout_days = len(workout_dates)
+    rank_title = get_rank_title(total_workout_days, language)
 
     logger.info(
-        "streak: user_id=%s -> current=%d longest=%d total_workouts=%d rank=%r",
-        user_id, result["current_streak"], result["longest_streak"], total_workouts, rank_title,
+        "streak: user_id=%s -> current=%d longest=%d total_workout_days=%d rank=%r",
+        user_id, result["current_streak"], result["longest_streak"], total_workout_days, rank_title,
     )
 
     return StreakResponse(
         target_weekdays=result["target_weekdays"],
         current_streak=result["current_streak"],
         longest_streak=result["longest_streak"],
-        total_workouts=total_workouts,
+        total_workout_days=total_workout_days,
         rank_title=rank_title,
     )
 
